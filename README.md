@@ -4,13 +4,12 @@ The C++ SDK for a [euclid](https://github.com/jensvogt/euclid) server, alongside
 euclid-pdk (Python) and euclid-ndk (Node.js).
 
 It covers **EAM** — euclid's access management module — which is where a login comes from, the two
-**request-signing schemes** a euclid client authenticates with, and six modules reached through the
+**request-signing schemes** a euclid client authenticates with, and seven modules reached through the
 session a login answers with: **ESM** (storage), **EQS** (queues), **ENS** (notifications), **EKM**
-(keys and certificates), **ESS** (secrets) and **ETS** (the FTP and SFTP endpoints onto a bucket).
-The other modules (EKV, EAP, EAG) speak the same protocol through the same client and will follow;
-until they do,
-`CDK::ModuleClient` is what one is built out of, and `EAM::Session::NewRequest()` and
-`CDK::HttpClient` reach any action this SDK does not name.
+(keys and certificates), **EKV** (tables of items), **ESS** (secrets) and **ETS** (the FTP and SFTP
+endpoints onto a bucket). The other modules (EAP, EAG) speak the same protocol through the same
+client and will follow; until they do, `CDK::ModuleClient` is what one is built out of, and
+`EAM::Session::NewRequest()` and `CDK::HttpClient` reach any action this SDK does not name.
 
 Both a **shared** and a **static** library are built: `libeuclid-cdk.so` and `libeuclid-cdk.a`.
 
@@ -180,6 +179,36 @@ the date passes, and the window is the only chance anybody gets to notice. `Revo
 to reach for when a key should no longer be used but the data under it is still wanted: a revoked
 key stops encrypting and goes on decrypting. There is no `Metrics()` here, unlike every other
 module: EKM's server answers `get-metrics` with a 404, so `Call()` is where that would live.
+
+### Tables
+
+`EKV::Ekv` is a key-value store: tables of items, read by key rather than searched.
+
+```cpp
+const EKV::Ekv ekv(session);
+ekv.CreateTable("sessions", "userId", {.sortKey = "startedAt", .sortKeyType = std::string(EKV::KeyNumber)});
+
+ekv.PutItem("sessions", {{"userId", "jens"}, {"startedAt", 1757462400}, {"host", "laptop"}});
+const auto recent = ekv.Query("sessions", "jens", {.sortOperator = std::string(EKV::SortGe),
+                                                   .sortValue = 1757462400});
+```
+
+A table is keyed on one attribute or two: a partition key that identifies an item, and optionally a
+sort key that orders the items sharing one — which is what makes a partition readable as a range.
+Only the keys have declared types, and the type is what a comparison is made under: a `KeyNumber`
+sort key orders 2, 9, 10, 100 rather than putting `"10"` before `"9"`.
+
+Everything else about an item is free-form JSON — `boost::json::object` in and out, not the tagged
+`COM::Variant` that EQS, ENS and ESM attributes use, because EKV stores documents rather than typed
+attribute maps. `Item::attributes` is what to pass straight back to `PutItem()`: the server keeps an
+item's timestamps among its attributes as `_created` and `_modified`, and this SDK lifts them out —
+a write replaces rather than merges, so leaving them in would make an item that was read, changed
+and written back grow two attributes it never had.
+
+`GetItem()` throws on a miss and `FindItem()` answers an empty `std::optional` instead; only a 404
+becomes empty, since a refusal or a malformed key does not mean "not there". `Query()` addresses a
+partition, which is what EKV is for; `Scan()` reads the table, which is for an export rather than a
+lookup.
 
 ### Secrets
 
