@@ -47,6 +47,17 @@ namespace Euclid::CDK::ENS {
     inline constexpr long InstallationRetention = 0;
 
     /**
+     * @brief The retention period that keeps every message published to the topic.
+     *
+     * @par
+     * Not a very large number of seconds: the server stores such a message with no expiry at all,
+     * which is what its TTL index ignores, so nothing is ever going to remove it. The topic then
+     * grows without limit and only PurgeTopic() empties it, which is why this is worth choosing
+     * rather than defaulting into - see ENS::Ens::SetTopicRetention().
+     */
+    inline constexpr long RetentionForever = -1;
+
+    /**
      * @brief The namespace that means "every namespace of the account" on the actions that take one
      * as a filter.
      *
@@ -233,11 +244,11 @@ namespace Euclid::CDK::ENS {
          * it is read.
          *
          * @param ern             the topic.
-         * @param retentionPeriod seconds, or InstallationRetention to follow
+         * @param retentionPeriod seconds; InstallationRetention to follow
          * euclid.modules.ens.retention-period as it changes rather than freezing a copy of what it
-         * says today.
-         * @throws EuclidError if the period is negative, which the server refuses anyway - this just
-         * says so before the round trip.
+         * says today; or RetentionForever to keep every message published to this topic.
+         * @throws EuclidError if the period is below RetentionForever, which the server refuses
+         * anyway - this just says so before the round trip.
          */
         [[nodiscard]]
         TopicRetentionResult SetTopicRetention(const std::string &ern, long retentionPeriod) const;

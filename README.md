@@ -4,10 +4,11 @@ The C++ SDK for a [euclid](https://github.com/jensvogt/euclid) server, alongside
 euclid-pdk (Python) and euclid-ndk (Node.js).
 
 It covers **EAM** — euclid's access management module — which is where a login comes from, the two
-**request-signing schemes** a euclid client authenticates with, and five modules reached through the
+**request-signing schemes** a euclid client authenticates with, and six modules reached through the
 session a login answers with: **ESM** (storage), **EQS** (queues), **ENS** (notifications), **EKM**
-(keys and certificates) and **ETS** (the FTP and SFTP endpoints onto a bucket). The other modules
-(EKV, EAP, ESS, EAG) speak the same protocol through the same client and will follow; until they do,
+(keys and certificates), **ESS** (secrets) and **ETS** (the FTP and SFTP endpoints onto a bucket).
+The other modules (EKV, EAP, EAG) speak the same protocol through the same client and will follow;
+until they do,
 `CDK::ModuleClient` is what one is built out of, and `EAM::Session::NewRequest()` and
 `CDK::HttpClient` reach any action this SDK does not name.
 
@@ -145,7 +146,11 @@ ens.PublishMessage(topic.ern, R"({"order": 18})");
 `StopTopic()` holds delivery without refusing publishers — what arrives meanwhile is kept and fanned
 out when the topic is started again, which is what a subscriber being redeployed asks for — and
 `SetTopicRetention()` says how long a published message is kept at all, since a topic is fanned out
-at publish time and nothing else would ever remove it.
+at publish time and nothing else would ever remove it. Its two named values are
+`ENS::InstallationRetention` (0), which follows `euclid.modules.ens.retention-period` as that
+changes, and `ENS::RetentionForever` (-1), which is not a very long period but the absence of one —
+the server stores such a message with no expiry, which is what its TTL index ignores, so the topic
+grows without limit and only `PurgeTopic()` empties it.
 
 Two smaller things worth knowing. `Eqs::AsInternal()` is a view of the client whose requests are
 marked as euclid's own traffic, for the polling that measures a system rather than uses it; without
@@ -175,6 +180,28 @@ the date passes, and the window is the only chance anybody gets to notice. `Revo
 to reach for when a key should no longer be used but the data under it is still wanted: a revoked
 key stops encrypting and goes on decrypting. There is no `Metrics()` here, unlike every other
 module: EKM's server answers `get-metrics` with a 404, so `Call()` is where that would live.
+
+### Secrets
+
+`ESS::Ess` keeps values encrypted under an EKM key and hands them back one at a time.
+
+```cpp
+const ESS::Ess ess(session);
+
+ess.CreateSecret("db-password", "hunter2", {.description = "the reporting database"});
+const auto password = ess.GetSecret("db-password").value;
+```
+
+`GetSecret()` is the only call that answers with a value — listing, rotating and tagging all answer
+with metadata alone, so those can be logged and printed without being the thing that leaks it. The
+value's life is tied to the key's: deleting that key in EKM is what makes the value unrecoverable,
+whatever ESS still says about the secret.
+
+`UpdateSecret()` takes `std::optional` fields for the same reason `ETS::Ets::UpdateServer()` does —
+an unset description leaves the stored one alone, an empty one clears it. A value is the exception:
+the server refuses an empty one, so this does too, one round trip earlier. Naming a `keyErn` moves
+the secret onto that key, which is how one is taken off a key being retired; that is not a rotation,
+and only a new value bumps the version.
 
 ### Transfer servers
 

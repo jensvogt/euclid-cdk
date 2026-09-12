@@ -224,11 +224,22 @@ BOOST_AUTO_TEST_SUITE(EnsRetentionTest)
         BOOST_TEST(lastBody(client.gateway).at("retentionPeriod").as_int64() == 0);
     }
 
-    // Refused before the round trip, which the server would refuse anyway.
-    BOOST_AUTO_TEST_CASE(RefusesANegativePeriodBeforeTheRoundTrip) {
+    // The one negative that means something: keep everything, which the server stores as no expiry
+    // at all rather than as a very distant one.
+    BOOST_AUTO_TEST_CASE(TakesMinusOneToMeanKeepEverything) {
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/order-events", "retentionPeriod": -1})"));
+
+        const auto result = client.ens.SetTopicRetention(kTopic, ENS::RetentionForever);
+        BOOST_TEST(result.retentionPeriod == ENS::RetentionForever);
+        BOOST_TEST(lastBody(client.gateway).at("retentionPeriod").as_int64() == -1);
+    }
+
+    // Refused before the round trip, which the server would refuse anyway. Below -1 rather than
+    // below zero, now that -1 is a value with a meaning of its own.
+    BOOST_AUTO_TEST_CASE(RefusesAPeriodBelowMinusOneBeforeTheRoundTrip) {
         const EnsClient client(Test::Answering());
 
-        BOOST_CHECK_THROW(std::ignore = client.ens.SetTopicRetention(kTopic, -1), EuclidError);
+        BOOST_CHECK_THROW(std::ignore = client.ens.SetTopicRetention(kTopic, -2), EuclidError);
         BOOST_TEST(client.gateway.Received().size() == 1U);// the login, and nothing else
     }
 

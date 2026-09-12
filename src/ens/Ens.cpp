@@ -47,8 +47,11 @@ namespace Euclid::CDK::ENS {
     }
 
     TopicRetentionResult Ens::SetTopicRetention(const std::string &ern, const long retentionPeriod) const {
-        if (retentionPeriod < 0) {
-            throw EuclidError("retentionPeriod cannot be negative; zero follows the installation default");
+        // -1 is the one negative that means something: keep everything. Anything below it is a typo
+        // the server refuses too, said here so that it costs no round trip.
+        if (retentionPeriod < RetentionForever) {
+            throw EuclidError("retentionPeriod has to be seconds, 0 to follow the installation default, "
+                              "or -1 to keep messages forever");
         }
         return ToTopicRetentionResult(Call("set-topic-retention", {{"ern", ern}, {"retentionPeriod", retentionPeriod}}));
     }

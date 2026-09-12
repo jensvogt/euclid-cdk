@@ -147,7 +147,7 @@ namespace Euclid::CDK::ENS {
 
     /**
      * @brief A topic's retention period after setting it, in seconds. Zero means the installation's
-     * own.
+     * own; -1 means the topic keeps everything published to it.
      */
     struct EUCLID_CDK_API TopicRetentionResult {
         std::string ern;
