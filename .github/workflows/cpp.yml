@@ -84,5 +84,10 @@ jobs:
       - name: Build
         run: cmake --build build --config Debug --parallel 4
 
+      # Verbose, and with Boost.Test naming each case as it enters it: a test that hangs is killed by
+      # the timeout and prints nothing at all otherwise, so the log would say which job failed but
+      # not where. The two together make the last line before a timeout the name of the culprit.
       - name: Test
-        run: ctest --test-dir build --build-config Debug --output-on-failure --timeout 120
+        env:
+          BOOST_TEST_LOG_LEVEL: test_suite
+        run: ctest --test-dir build --build-config Debug --verbose --timeout 120
