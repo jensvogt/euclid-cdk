@@ -4,11 +4,12 @@ The C++ SDK for a [euclid](https://github.com/jensvogt/euclid) server, alongside
 euclid-pdk (Python) and euclid-ndk (Node.js).
 
 It covers **EAM** — euclid's access management module — which is where a login comes from, the two
-**request-signing schemes** a euclid client authenticates with, and three modules reached through
-the session a login answers with: **ESM** (storage), **EQS** (queues) and **ENS** (notifications).
-The other modules (EKM, EKV, EAP, ESS, EAG) speak the same protocol through the same client and will
-follow; until they do, `CDK::ModuleClient` is what one is built out of, and
-`EAM::Session::NewRequest()` and `CDK::HttpClient` reach any action this SDK does not name.
+**request-signing schemes** a euclid client authenticates with, and five modules reached through the
+session a login answers with: **ESM** (storage), **EQS** (queues), **ENS** (notifications), **EKM**
+(keys and certificates) and **ETS** (the FTP and SFTP endpoints onto a bucket). The other modules
+(EKV, EAP, ESS, EAG) speak the same protocol through the same client and will follow; until they do,
+`CDK::ModuleClient` is what one is built out of, and `EAM::Session::NewRequest()` and
+`CDK::HttpClient` reach any action this SDK does not name.
 
 Both a **shared** and a **static** library are built: `libeuclid-cdk.so` and `libeuclid-cdk.a`.
 
@@ -151,6 +152,51 @@ marked as euclid's own traffic, for the polling that measures a system rather th
 it, instrumentation keeps a pool permanently awake and makes an idle module look busy.
 And `PurgeAllQueues()` covers every namespace of the account while `PurgeAllTopics()` follows the
 session's namespace — the two differ because each keeps the default it shipped with, in every SDK.
+
+### Keys and certificates
+
+`EKM::Ekm` holds encryption keys and the certificates a deployment serves. Key material never leaves
+the server: encrypting sends the bytes to the key rather than fetching the key to the bytes.
+
+```cpp
+const EKM::Ekm ekm(session);
+
+const auto key = ekm.CreateKey({.description = "customer exports"});
+const auto sealed = ekm.Encrypt(key.name, "account 4711");
+const auto plain  = ekm.Decrypt(key.name, sealed);
+```
+
+A key is named two ways and they are not interchangeable: `name` is the ID the server minted, and is
+what encrypts, decrypts and is deleted; the ERN is what revokes, describes and tags. Both are on
+every `Key` a listing returns.
+
+`DeleteKey()` schedules rather than deletes — everything the key encrypted becomes unreadable when
+the date passes, and the window is the only chance anybody gets to notice. `RevokeKey()` is the one
+to reach for when a key should no longer be used but the data under it is still wanted: a revoked
+key stops encrypting and goes on decrypting. There is no `Metrics()` here, unlike every other
+module: EKM's server answers `get-metrics` with a 404, so `Call()` is where that would live.
+
+### Transfer servers
+
+`ETS::Ets` owns the FTP and SFTP endpoints onto a bucket — which protocol, which port, who may log
+in, which bucket the files really live in. It never speaks either protocol itself; euclid's manager
+turns a definition into a running process, and the process reads its definition back from here.
+
+```cpp
+const ETS::Ets ets(session);
+
+ets.CreateServer("partner-drop", "invoices", 2222, {.userGroups = {"partners"}, .homeDirectory = "incoming/"});
+ets.StartServer("partner-drop");
+```
+
+So a file uploaded over FTP is an object in a bucket, with the events and the lifecycle every other
+object has. `desiredState` is what was asked for and `state` is what is observed running: the two
+differing is a server starting up, and differing for long is one that cannot. Starting one only
+writes the desired state, so the server in the answer is usually still `STOPPED`.
+
+`UpdateServer()` takes `std::optional` fields because the server distinguishes a field being *sent*
+from one that is not, rather than one value from another — an unset field leaves the stored one
+alone, and an empty string replaces it. Every action here is administrator-only.
 
 ### Signing
 
