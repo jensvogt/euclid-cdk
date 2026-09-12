@@ -159,9 +159,27 @@ if (EUCLID_CDK_BUILD_STATIC)
     list(APPEND EUCLID_CDK_TARGETS euclid-cdk-static)
 endif ()
 
-# What the tests and examples link: the shared library when it is built, so that what they exercise
-# is what most consumers get, and the static one otherwise.
-if (EUCLID_CDK_BUILD_SHARED)
+# -------------------------------------------------------------------------
+# What the tests and examples link: the shared library, so that what they
+# exercise is what most consumers get - except on Windows, where they link
+# the static one.
+#
+# The MSVC block above builds everything against the *static* CRT, because
+# that is what vcpkg's x64-windows-static Boost and OpenSSL are built
+# against and mixing the two is LNK2038. A DLL compiled that way carries
+# its own copy of the CRT, and with it its own heap: every std::string
+# this API hands back is allocated by the DLL's allocator and freed by the
+# caller's, which is undefined behaviour whatever it happens to crash
+# with. Linking the tests statically there is the configuration that is
+# actually sound, not a way around the symptom.
+#
+# The shared library is still built, installed and exported on Windows -
+# a consumer that wants it builds against a dynamic-CRT triplet, where the
+# two halves agree again.
+# -------------------------------------------------------------------------
+if (WIN32 AND EUCLID_CDK_BUILD_STATIC)
+    set(EUCLID_CDK_DEFAULT_TARGET euclid-cdk-static)
+elseif (EUCLID_CDK_BUILD_SHARED)
     set(EUCLID_CDK_DEFAULT_TARGET euclid-cdk)
 else ()
     set(EUCLID_CDK_DEFAULT_TARGET euclid-cdk-static)
@@ -176,14 +194,19 @@ endif ()
 # before main(), which from the outside looks like a program that started
 # and said nothing at all.
 #
-# The generator expression lists exactly what this target loads at run
-# time, which under vcpkg's x64-windows-static triplet is this project's
-# own DLL and nothing else - Boost and OpenSSL are static there.
+# The generator expression lists everything this target loads at run time
+# rather than one file by name, so a build against a dynamic-CRT triplet
+# takes Boost's and OpenSSL's DLLs along with it. Under x64-windows-static
+# those two are static and the targets here link euclid-cdk-static, which
+# leaves the list empty - hence "cmake -E true", the no-op that stands in
+# for a copy with nothing to copy.
 # -------------------------------------------------------------------------
 function(euclid_cdk_copy_runtime_dlls TARGET)
-    if (WIN32 AND EUCLID_CDK_BUILD_SHARED)
+    if (WIN32)
         add_custom_command(TARGET ${TARGET} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:${TARGET}> $<TARGET_FILE_DIR:${TARGET}>
+                COMMAND ${CMAKE_COMMAND} -E
+                $<IF:$<BOOL:$<TARGET_RUNTIME_DLLS:${TARGET}>>,copy_if_different,true>
+                $<TARGET_RUNTIME_DLLS:${TARGET}> $<TARGET_FILE_DIR:${TARGET}>
                 COMMAND_EXPAND_LISTS)
     endif ()
 endfunction()
