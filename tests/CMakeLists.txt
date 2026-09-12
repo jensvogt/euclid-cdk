@@ -19,6 +19,7 @@ add_executable(euclid-cdk-tests
 target_link_libraries(euclid-cdk-tests PRIVATE ${EUCLID_CDK_DEFAULT_TARGET} Boost::unit_test_framework)
 target_include_directories(euclid-cdk-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(euclid-cdk-tests PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+euclid_cdk_copy_runtime_dlls(euclid-cdk-tests)
 
 # Boost.Test's dynamic variant supplies its own main(); the static one does not, and mixing the two
 # is the usual cause of an undefined-reference-to-main link failure here.

@@ -167,6 +167,27 @@ else ()
     set(EUCLID_CDK_DEFAULT_TARGET euclid-cdk-static)
 endif ()
 
+# -------------------------------------------------------------------------
+# Puts the DLLs an executable needs next to it, on the one platform that
+# has no rpath: the multi-config generator writes libeuclid-cdk.dll to
+# build/Debug and a test or example to build/tests/Debug, and Windows
+# looks for a DLL beside the executable, in the system directories and on
+# PATH - none of which that is. The executable then dies in the loader
+# before main(), which from the outside looks like a program that started
+# and said nothing at all.
+#
+# The generator expression lists exactly what this target loads at run
+# time, which under vcpkg's x64-windows-static triplet is this project's
+# own DLL and nothing else - Boost and OpenSSL are static there.
+# -------------------------------------------------------------------------
+function(euclid_cdk_copy_runtime_dlls TARGET)
+    if (WIN32 AND EUCLID_CDK_BUILD_SHARED)
+        add_custom_command(TARGET ${TARGET} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:${TARGET}> $<TARGET_FILE_DIR:${TARGET}>
+                COMMAND_EXPAND_LISTS)
+    endif ()
+endfunction()
+
 if (EUCLID_CDK_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
