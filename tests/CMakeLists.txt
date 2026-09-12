@@ -3,6 +3,8 @@ find_package(Boost CONFIG REQUIRED COMPONENTS unit_test_framework)
 add_executable(euclid-cdk-tests
         CredentialsTest.cpp
         EamTest.cpp
+        EnsTest.cpp
+        EqsTest.cpp
         EsmTest.cpp
         FakeGateway.cpp
         FakeStorage.cpp

@@ -11,8 +11,8 @@
 
 namespace Euclid::CDK {
 
-    ModuleClient::ModuleClient(const EAM::Session &session, std::string target, std::vector<std::string> byteActions)
-        : _session(session), _target(std::move(target)), _byteActions(std::move(byteActions)) {
+    ModuleClient::ModuleClient(const EAM::Session &session, std::string target, std::vector<std::string> byteActions, Headers headers)
+        : _session(session), _target(std::move(target)), _byteActions(std::move(byteActions)), _headers(std::move(headers)) {
         if (_target.empty()) throw EuclidError("a module client must name its target, e.g. \"esm\"");
     }
 
@@ -40,7 +40,9 @@ namespace Euclid::CDK {
 
         Request request = _session.Client().NewRequest(_target, action, body, contentType);
         // Before the routing headers and the signature, so that a header this module sets can never
-        // overwrite one a signature was made over.
+        // overwrite one a signature was made over. This client's own first, so that a call can still
+        // say something different from what the client says by default.
+        for (const auto &[name, value]: _headers) request.set(name, value);
         for (const auto &[name, value]: headers) request.set(name, value);
         _session.ApplyRoutingHeaders(request);
 

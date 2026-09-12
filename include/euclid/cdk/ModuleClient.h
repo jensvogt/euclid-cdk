@@ -94,8 +94,11 @@ namespace Euclid::CDK {
          * @param target      the module, e.g. "esm".
          * @param byteActions the actions of this module that carry raw bytes rather than JSON, and
          * so present the session's bearer token rather than a signature - see Authenticate().
+         * @param headers     headers every request of this client carries on top of the session's
+         * own, for a second view of a module that differs from the first by one header - see
+         * EQS::Eqs::AsInternal().
          */
-        ModuleClient(const EAM::Session &session, std::string target, std::vector<std::string> byteActions = {});
+        ModuleClient(const EAM::Session &session, std::string target, std::vector<std::string> byteActions = {}, Headers headers = {});
 
         /**
          * @brief One JSON action, sent. The raw response, for a caller that reads a status Result()
@@ -170,6 +173,7 @@ namespace Euclid::CDK {
         const EAM::Session &_session;
         std::string _target;
         std::vector<std::string> _byteActions;
+        Headers _headers;
     };
 
 }// namespace Euclid::CDK

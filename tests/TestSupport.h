@@ -3,6 +3,7 @@
 #pragma once
 
 // C++ includes
+#include <map>
 #include <string>
 
 // Euclid includes
@@ -56,6 +57,14 @@ namespace Euclid::CDK::Test {
      */
     [[nodiscard]]
     FakeGateway::Handler Answering(const std::string &body = {});
+
+    /**
+     * @brief The same, for a gateway that answers each action with a body of its own.
+     *
+     * @param answers action to response body; an action nobody named is answered with "{}".
+     */
+    [[nodiscard]]
+    FakeGateway::Handler AnsweringByAction(std::map<std::string, std::string> answers);
 
     /**
      * @brief A login builder pointed at a gateway, with the credentials cache out of the way.

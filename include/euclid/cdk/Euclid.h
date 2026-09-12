@@ -23,18 +23,22 @@
  *
  * @par What is here
  * EAM - euclid's access management module - and the two signing schemes a euclid client
- * authenticates with; and ESM, euclid's storage module, which is reached through a session EAM
- * answered with:
+ * authenticates with; and three modules reached through a session EAM answered with: ESM (storage),
+ * EQS (queues) and ENS (notifications).
  *
  * @code
  * const ESM::Esm esm(session);
  * const auto bucket = esm.CreateBucket("reports");
  * esm.UploadFile(bucket.ern, "2026/q3.pdf", "q3.pdf");
+ *
+ * const EQS::Eqs eqs(session);
+ * const ENS::Ens ens(session);
+ * ens.Subscribe(topicErn, eqs.GetQueueErn("orders"));
  * @endcode
  *
  * @par
- * The rest (EQS, ENS, EKM, EKV, EAP, ESS, EAG) speak the same protocol through the same client and
- * will follow. Until they do, CDK::ModuleClient is what one is built out of, and
+ * The rest (EKM, EKV, EAP, ESS, EAG) speak the same protocol through the same client and will
+ * follow. Until they do, CDK::ModuleClient is what one is built out of, and
  * EAM::Session::NewRequest() and CDK::HttpClient reach any action this SDK does not name.
  *
  * @par Why there is no umbrella class
@@ -58,10 +62,14 @@
 #include <euclid/cdk/auth/SigningScheme.h>
 #include <euclid/cdk/dto/Com.h>
 #include <euclid/cdk/dto/Eam.h>
+#include <euclid/cdk/dto/Ens.h>
+#include <euclid/cdk/dto/Eqs.h>
 #include <euclid/cdk/dto/Esm.h>
 #include <euclid/cdk/dto/Page.h>
 #include <euclid/cdk/eam/Eam.h>
 #include <euclid/cdk/eam/Session.h>
+#include <euclid/cdk/ens/Ens.h>
+#include <euclid/cdk/eqs/Eqs.h>
 #include <euclid/cdk/esm/Esm.h>
 #include <euclid/cdk/http/HttpClient.h>
 

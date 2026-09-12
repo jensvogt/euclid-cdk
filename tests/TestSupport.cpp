@@ -3,6 +3,7 @@
 // C++ includes
 #include <algorithm>
 #include <chrono>
+#include <map>
 #include <optional>
 #include <utility>
 
@@ -61,6 +62,13 @@ namespace Euclid::CDK::Test {
 
     FakeGateway::Handler Answering(const std::string &body) {
         return Authenticated([body](const Request &) { return FakeGateway::Json(200, body.empty() ? "{}" : body); });
+    }
+
+    FakeGateway::Handler AnsweringByAction(std::map<std::string, std::string> answers) {
+        return Authenticated([answers = std::move(answers)](const Request &request) {
+            const auto found = answers.find(std::string(request["x-euclid-action"]));
+            return FakeGateway::Json(200, found == answers.end() ? "{}" : found->second);
+        });
     }
 
     EAM::Eam Builder(const FakeGateway &gateway) {

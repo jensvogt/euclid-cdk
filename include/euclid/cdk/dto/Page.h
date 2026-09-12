@@ -26,11 +26,28 @@
 namespace Euclid::CDK {
 
     /**
-     * @brief How a listing is paged, ordered and narrowed.
+     * @brief How a listing is paged and ordered.
      *
      * @par
      * An empty sortColumn means "whatever this listing sorts by", which each call fills in with the
-     * server's own default for it - "userId" for users, "name" for groups, namespaces and buckets.
+     * server's own default for it - "userId" for users, "name" for groups, namespaces and buckets,
+     * "created" for messages.
+     */
+    struct EUCLID_CDK_API PageOptions {
+        long pageSize{10};
+        long pageIndex{0};
+        std::string sortColumn;
+        std::string sortDirection{"asc"};
+    };
+
+    /**
+     * @brief The same, for the listings that also narrow by prefix.
+     *
+     * @par
+     * A separate struct rather than one built on PageOptions, so that a caller can keep writing
+     * @code {.prefix = "j", .pageSize = 25} @endcode - a designated initializer cannot name a field
+     * a base class holds. The listings that page messages take PageOptions, because the server has
+     * nothing to match a message against.
      */
     struct EUCLID_CDK_API ListOptions {
         std::string prefix;
@@ -47,6 +64,12 @@ namespace Euclid::CDK {
      * @param options           what the caller asked for.
      * @param defaultSortColumn what this listing sorts by when the caller did not say.
      * @return the payload, to be sent as it is or with the listing's own fields added to it.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API boost::json::object PagePayload(const PageOptions &options, const std::string &defaultSortColumn);
+
+    /**
+     * @brief The same, plus the prefix a listing is narrowed by.
      */
     [[nodiscard]]
     EUCLID_CDK_API boost::json::object ListPayload(const ListOptions &options, const std::string &defaultSortColumn);

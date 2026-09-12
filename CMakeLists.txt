@@ -60,10 +60,14 @@ set(EUCLID_CDK_SOURCES
         src/auth/SigningScheme.cpp
         src/dto/Com.cpp
         src/dto/Eam.cpp
+        src/dto/Ens.cpp
+        src/dto/Eqs.cpp
         src/dto/Esm.cpp
         src/dto/Page.cpp
         src/eam/Eam.cpp
         src/eam/Session.cpp
+        src/ens/Ens.cpp
+        src/eqs/Eqs.cpp
         src/esm/Esm.cpp
         src/http/HttpClient.cpp)
 
@@ -81,10 +85,14 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/auth/SigningScheme.h
         include/euclid/cdk/dto/Com.h
         include/euclid/cdk/dto/Eam.h
+        include/euclid/cdk/dto/Ens.h
+        include/euclid/cdk/dto/Eqs.h
         include/euclid/cdk/dto/Esm.h
         include/euclid/cdk/dto/Page.h
         include/euclid/cdk/eam/Eam.h
         include/euclid/cdk/eam/Session.h
+        include/euclid/cdk/ens/Ens.h
+        include/euclid/cdk/eqs/Eqs.h
         include/euclid/cdk/esm/Esm.h
         include/euclid/cdk/http/HttpClient.h
         include/euclid/cdk/http/Message.h)

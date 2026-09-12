@@ -4,9 +4,10 @@ The C++ SDK for a [euclid](https://github.com/jensvogt/euclid) server, alongside
 euclid-pdk (Python) and euclid-ndk (Node.js).
 
 It covers **EAM** — euclid's access management module — which is where a login comes from, the two
-**request-signing schemes** a euclid client authenticates with, and **ESM**, euclid's storage
-module. The other modules (EQS, ENS, EKM, EKV, EAP, ESS, EAG) speak the same protocol through the
-same client and will follow; until they do, `CDK::ModuleClient` is what one is built out of, and
+**request-signing schemes** a euclid client authenticates with, and three modules reached through
+the session a login answers with: **ESM** (storage), **EQS** (queues) and **ENS** (notifications).
+The other modules (EKM, EKV, EAP, ESS, EAG) speak the same protocol through the same client and will
+follow; until they do, `CDK::ModuleClient` is what one is built out of, and
 `EAM::Session::NewRequest()` and `CDK::HttpClient` reach any action this SDK does not name.
 
 Both a **shared** and a **static** library are built: `libeuclid-cdk.so` and `libeuclid-cdk.a`.
@@ -102,6 +103,55 @@ everything already transferred. A download is tried in one request first and fal
 multipart path when the server answers "too large", so a caller does not have to know which of the
 two an object needs. Everything else is one request at a time, like the session.
 
+### Queues and topics
+
+`EQS::Eqs` and `ENS::Ens` are built from a session the same way, and are the two halves of euclid's
+messaging: a queue holds a message until a consumer takes it, and a topic hands each message to
+every subscriber and keeps it as a record of having done so.
+
+```cpp
+const EQS::Eqs eqs(session);
+
+const auto queue = eqs.CreateQueue("orders");
+eqs.SendMessage(queue.ern, R"({"order": 17})", {.attributes = {{"tenant", "acme"}}});
+
+for (const auto &message: eqs.ReceiveMessages(queue.ern, {.waitTime = std::chrono::seconds(20)}).items) {
+    handle(message.body);
+    eqs.DeleteMessage(message.receiptHandle);     // after the work, not before
+}
+```
+
+Receiving is a lease rather than a read: a message a consumer takes is invisible to every other
+consumer until its visibility timeout expires, and deleting it with the receipt handle is what says
+the work was done. A consumer that dies instead simply stops holding the lease, and the message
+comes back.
+
+`waitTime` is a long poll the **server** holds open, so an idle queue costs one request for the
+whole window rather than one per tick, and a message arrives the instant it is sent. With no wait
+asked for, the queue's depth is checked first and an empty queue costs no receive at all — a receive
+is a write. The one case that loops is the server declining to wait, which it does when it has no
+long-poll slot free; then the client waits a moment before asking again, since a server short of
+threads does not need to be asked more often.
+
+```cpp
+const ENS::Ens ens(session);
+
+const auto topic = ens.CreateTopic("order-events");
+ens.Subscribe(topic.ern, queue.ern);              // every message from now on lands on the queue
+ens.PublishMessage(topic.ern, R"({"order": 18})");
+```
+
+`StopTopic()` holds delivery without refusing publishers — what arrives meanwhile is kept and fanned
+out when the topic is started again, which is what a subscriber being redeployed asks for — and
+`SetTopicRetention()` says how long a published message is kept at all, since a topic is fanned out
+at publish time and nothing else would ever remove it.
+
+Two smaller things worth knowing. `Eqs::AsInternal()` is a view of the client whose requests are
+marked as euclid's own traffic, for the polling that measures a system rather than uses it; without
+it, instrumentation keeps a pool permanently awake and makes an idle module look busy.
+And `PurgeAllQueues()` covers every namespace of the account while `PurgeAllTopics()` follows the
+session's namespace — the two differ because each keeps the default it shipped with, in every SDK.
+
 ### Signing
 
 A euclid client authenticates in one of two ways, and the server accepts either: a **bearer token**
@@ -182,14 +232,16 @@ something that actually reassembles what it is sent.
 ### Examples
 
 ```bash
-./build/examples/eam-walkthrough https://euclid.example.com jens secret [namespace]
-./build/examples/esm-walkthrough https://euclid.example.com jens secret [namespace]
+./build/examples/eam-walkthrough       https://euclid.example.com jens secret [namespace]
+./build/examples/esm-walkthrough       https://euclid.example.com jens secret [namespace]
+./build/examples/messaging-walkthrough https://euclid.example.com jens secret [namespace]
 ```
 
-The EAM one reads only, apart from the namespace it switches to when one is given. The ESM one
-works in a bucket of its own, named after the moment it started, and deletes it again at the end —
-so a run that dies halfway leaves one obviously disposable bucket behind rather than touching
-anything of yours.
+The EAM one reads only, apart from the namespace it switches to when one is given. The other two
+work in resources of their own, named after the moment they started, and delete them again at the
+end — so a run that dies halfway leaves something obviously disposable behind rather than touching
+anything of yours. The messaging one is both modules at once: a topic, a queue subscribed to it, and
+a message that travels.
 
 ## Licence
 
