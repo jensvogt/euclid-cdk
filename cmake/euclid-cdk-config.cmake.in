@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Boost and OpenSSL are PUBLIC/PRIVATE link dependencies of the exported targets, so a consumer has
+# to be able to resolve them before the target file below can be included.
+find_dependency(Boost CONFIG COMPONENTS asio beast json system url)
+find_dependency(OpenSSL COMPONENTS SSL Crypto)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/euclid-cdk-targets.cmake")
+
+check_required_components(euclid-cdk)

@@ -1,0 +1,26 @@
+{
+  "name": "euclid-cdk",
+  "version": "0.1.0",
+  "description": "C++ SDK for a euclid server",
+  "license": "Apache-2.0",
+  "dependencies": [
+    "boost-asio",
+    "boost-beast",
+    "boost-json",
+    "boost-system",
+    "boost-url",
+    "openssl"
+  ],
+  "features": {
+    "tests": {
+      "description": "Build the unit tests",
+      "dependencies": [
+        "boost-test"
+      ]
+    }
+  },
+  "default-features": [
+    "tests"
+  ],
+  "builtin-baseline": "94a541197763a4f449a1b91478df48c0584a6256"
+}

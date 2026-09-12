@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Generated from cmake/Version.h.in - do not edit. The version lives in version.txt.
+
+#pragma once
+
+// C++ includes
+#include <string_view>
+
+namespace Euclid::CDK {
+
+    /**
+     * @brief The version of this SDK, e.g. "0.1.0".
+     */
+    inline constexpr std::string_view Version = "@PROJECT_VERSION@";
+
+    /**
+     * @brief Major version number.
+     */
+    inline constexpr int VersionMajor = @PROJECT_VERSION_MAJOR@;
+
+    /**
+     * @brief Minor version number.
+     */
+    inline constexpr int VersionMinor = @PROJECT_VERSION_MINOR@;
+
+    /**
+     * @brief Patch version number.
+     */
+    inline constexpr int VersionPatch = @PROJECT_VERSION_PATCH@;
+
+    /**
+     * @brief What this SDK sends as its User-Agent, e.g. "euclid-cdk/0.1.0".
+     */
+    inline constexpr std::string_view UserAgent = "euclid-cdk/@PROJECT_VERSION@";
+
+}// namespace Euclid::CDK

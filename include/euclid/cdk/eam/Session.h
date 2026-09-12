@@ -1,0 +1,540 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+// C++ includes
+#include <functional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+// Boost includes
+#include <boost/json.hpp>
+
+// Euclid includes
+#include <euclid/cdk/Credentials.h>
+#include <euclid/cdk/Export.h>
+#include <euclid/cdk/auth/SigningScheme.h>
+#include <euclid/cdk/dto/Eam.h>
+#include <euclid/cdk/http/HttpClient.h>
+
+namespace Euclid::CDK::EAM {
+
+    /**
+     * @brief The module this client talks to - what travels in x-euclid-target.
+     */
+    inline constexpr std::string_view Target = "eam";
+
+    /**
+     * @brief How a session authenticates.
+     */
+    enum class AuthMode {
+
+        /**
+         * @brief Sign when there is an access key to sign with, and present the bearer token
+         * otherwise. euclid accepts either for every action (Core::HttpActionServer::Authenticate).
+         */
+        Auto,
+
+        /**
+         * @brief Always sign. Fails loudly if the session has no access key, rather than quietly
+         * falling back to a token - which is what a caller who asked for signatures wants to know
+         * about.
+         */
+        Signature,
+
+        /**
+         * @brief Always present the bearer token, even when an access key is available.
+         */
+        Bearer
+    };
+
+    /**
+     * @brief How a listing is paged, ordered and narrowed.
+     *
+     * @par
+     * An empty sortColumn means "whatever this listing sorts by", which each call fills in with the
+     * server's own default for it - "userId" for users, "name" for groups and namespaces.
+     */
+    struct EUCLID_CDK_API ListOptions {
+        std::string prefix;
+        long pageSize{10};
+        long pageIndex{0};
+        std::string sortColumn;
+        std::string sortDirection{"asc"};
+    };
+
+    /**
+     * @brief The optional half of Register().
+     */
+    struct EUCLID_CDK_API RegisterOptions {
+
+        /**
+         * @brief Email address, or empty for a user who logs in by ID alone.
+         */
+        std::string email;
+
+        /**
+         * @brief Account to create the user in; the session's own when empty.
+         */
+        std::string accountId;
+
+        /**
+         * @brief Region to create the user in; the session's own when empty.
+         */
+        std::string region;
+
+        /**
+         * @brief Whether the new user is an administrator.
+         */
+        bool isAdmin{false};
+    };
+
+    /**
+     * @brief Everything a Session needs to exist, which is what a login produces.
+     */
+    struct EUCLID_CDK_API SessionOptions {
+        std::string baseUrl;
+        std::string token;
+        std::string userId;
+        std::string accountId;
+        std::string region;
+        std::string accessKeyId;
+        std::string secretAccessKey;
+        bool isAdmin{false};
+        std::string nameSpace;
+
+        /**
+         * @brief The login response as it arrived, for fields this SDK does not name.
+         */
+        boost::json::object raw;
+
+        /**
+         * @brief TLS and timeout settings the session keeps talking on.
+         */
+        ConnectionOptions connection;
+
+        /**
+         * @brief Which scheme signed requests use. Never null.
+         */
+        const SigningScheme *signingScheme{nullptr};
+
+        /**
+         * @brief Whether to sign, present a token, or decide per request.
+         */
+        AuthMode auth{AuthMode::Auto};
+
+        /**
+         * @brief Whether ~/.euclid/credentials may be written as the session changes.
+         */
+        bool cache{true};
+    };
+
+    /**
+     * @brief An authenticated session, and every EAM operation that needs one.
+     *
+     * @par
+     * Holds two credentials, because the server accepts two. The bearer token is what a login
+     * always produces; the access key and secret are what it produces when the user has one, and
+     * they are what a signature is made with. Which of the two a request presents is decided per
+     * session by AuthMode.
+     *
+     * @par
+     * Sessions are mutable: ChangeNamespace() changes this session rather than answering with a new
+     * one, since the namespace is a property of what the caller is doing next rather than of the
+     * login.
+     *
+     * @par
+     * Not thread-safe. A session owns one connection and sends one request at a time; concurrent
+     * callers want a session each.
+     *
+     * @author jens.vogt\@opitz-consulting.com
+     */
+    class EUCLID_CDK_API Session {
+    public:
+
+        /**
+         * @brief Builds a session from what a login answered with. Normally reached through
+         * EAM::Eam::Login() rather than directly.
+         *
+         * @param options the session's credentials and settings.
+         */
+        explicit Session(SessionOptions options);
+
+        // -- identity ---------------------------------------------------------------------------
+
+        /**
+         * @brief The server this session talks to.
+         */
+        [[nodiscard]]
+        const std::string &BaseUrl() const;
+
+        /**
+         * @brief The bearer token the login answered with.
+         */
+        [[nodiscard]]
+        const std::string &Token() const;
+
+        /**
+         * @brief The user this session acts as.
+         */
+        [[nodiscard]]
+        const std::string &UserId() const;
+
+        /**
+         * @brief The account this session acts in.
+         */
+        [[nodiscard]]
+        const std::string &AccountId() const;
+
+        /**
+         * @brief The region this session acts in.
+         */
+        [[nodiscard]]
+        const std::string &Region() const;
+
+        /**
+         * @brief The access key ID signatures are made with, or empty when the login returned none.
+         */
+        [[nodiscard]]
+        const std::string &AccessKeyId() const;
+
+        /**
+         * @brief The secret access key paired with AccessKeyId().
+         */
+        [[nodiscard]]
+        const std::string &SecretAccessKey() const;
+
+        /**
+         * @brief Whether the server reported this user as an administrator.
+         */
+        [[nodiscard]]
+        bool IsAdmin() const;
+
+        /**
+         * @brief The namespace every namespace-scoped call is currently restricted to, or empty
+         * for unscoped.
+         */
+        [[nodiscard]]
+        const std::string &Namespace() const;
+
+        /**
+         * @brief The login response as it arrived, for fields this SDK does not name.
+         */
+        [[nodiscard]]
+        const boost::json::object &Raw() const;
+
+        /**
+         * @brief The "\@authority" this session's RFC 9421 signatures are made over, for
+         * diagnostics: when a signature is refused, this and the Host header are the first two
+         * things worth comparing.
+         */
+        [[nodiscard]]
+        std::string Authority() const;
+
+        /**
+         * @brief This session in the shape ~/.euclid/credentials holds it.
+         */
+        [[nodiscard]]
+        Credentials::Entry ToCredentialsEntry() const;
+
+        /**
+         * @brief The scheme signed requests use.
+         */
+        [[nodiscard]]
+        const SigningScheme &Scheme() const;
+
+        /**
+         * @brief Switches signing scheme for every later request of this session.
+         *
+         * @param scheme SigningScheme::SigV4() or SigningScheme::Rfc9421().
+         */
+        void SetScheme(const SigningScheme &scheme);
+
+        /**
+         * @brief Where the bearer token comes from, when it does not simply come from Token().
+         *
+         * @par
+         * A process that runs for days holds a token that does not last that long. euclid rewrites
+         * an application's credentials file before the token in it expires, so an application that
+         * cached the first token it saw would start collecting 401s about an hour in. Setting this
+         * to something that re-reads that file makes the session follow the rotation.
+         *
+         * @param provider answers with the token to present now, or nullptr to use Token().
+         */
+        void SetTokenProvider(std::function<std::string()> provider);
+
+        /**
+         * @brief The bearer token to present now - the token provider's, or Token().
+         */
+        [[nodiscard]]
+        std::string CurrentToken() const;
+
+        // -- users ------------------------------------------------------------------------------
+
+        /**
+         * @brief One page of users, and how many exist in total.
+         *
+         * @param options paging, ordering and prefix.
+         * @return the page.
+         */
+        [[nodiscard]]
+        Page<User> ListUsers(const ListOptions &options = {}) const;
+
+        /**
+         * @brief Creates a user.
+         *
+         * @param userId   the new user's ID.
+         * @param password the new user's password.
+         * @param options  email, account, region and admin flag; account and region default to
+         * this session's own.
+         * @return the created user.
+         */
+        [[nodiscard]]
+        User Register(const std::string &userId, const std::string &password, const RegisterOptions &options = {}) const;
+
+        /**
+         * @brief Deletes a user.
+         *
+         * @param userId the user to delete.
+         */
+        void DeleteUser(const std::string &userId) const;
+
+        // -- namespace scoping ------------------------------------------------------------------
+
+        /**
+         * @brief Switches the namespace every namespace-scoped call is restricted to, until changed
+         * again.
+         *
+         * @par
+         * The server validates it against the current account and the caller's grants, so this is a
+         * round trip rather than a local assignment. An empty string clears the scope.
+         *
+         * @param nameSpace the namespace, or empty to clear the scope.
+         */
+        void ChangeNamespace(const std::string &nameSpace);
+
+        // -- access keys ------------------------------------------------------------------------
+
+        /**
+         * @brief Creates an access key for this session's user.
+         *
+         * @par
+         * The secret comes back here and nowhere else - ListAccessKeys() will never show it again -
+         * so a caller that does not store it has to create another key.
+         *
+         * @return the new key, secret included.
+         */
+        [[nodiscard]]
+        CreateAccessKeyResult CreateAccessKey() const;
+
+        /**
+         * @brief This user's own access keys, without their secrets.
+         */
+        [[nodiscard]]
+        std::vector<AccessKey> ListAccessKeys() const;
+
+        /**
+         * @brief Deletes one of this user's own access keys.
+         *
+         * @param accessKeyId the key to delete.
+         */
+        void DeleteAccessKey(const std::string &accessKeyId) const;
+
+        // -- user groups ------------------------------------------------------------------------
+
+        /**
+         * @brief Creates an empty user group. Administrator only.
+         *
+         * @param name        the group's name.
+         * @param description a description, or empty.
+         * @return the created group.
+         */
+        [[nodiscard]]
+        UserGroup CreateUserGroup(const std::string &name, const std::string &description = {}) const;
+
+        /**
+         * @brief One page of user groups, and how many exist in total.
+         */
+        [[nodiscard]]
+        Page<UserGroup> ListUserGroups(const ListOptions &options = {}) const;
+
+        /**
+         * @brief Adds a user to a group.
+         *
+         * @param userGroup the group's ERN.
+         * @param user      the user's ERN.
+         */
+        void AddUserToUserGroup(const std::string &userGroup, const std::string &user) const;
+
+        /**
+         * @brief Removes a user from a group.
+         *
+         * @param userGroup the group's ERN.
+         * @param user      the user's ERN.
+         */
+        void RemoveUserFromUserGroup(const std::string &userGroup, const std::string &user) const;
+
+        /**
+         * @brief Deletes a user group. Administrator only.
+         *
+         * @param name the group's name.
+         */
+        void DeleteUserGroup(const std::string &name) const;
+
+        // -- accounts ---------------------------------------------------------------------------
+
+        /**
+         * @brief Creates an account. Administrator only - account creation is platform-level and is
+         * not delegated to account owners.
+         *
+         * @param accountId   the new account's ID.
+         * @param name        the new account's name.
+         * @param description a description, or empty.
+         * @return the created account.
+         */
+        [[nodiscard]]
+        Account CreateAccount(const std::string &accountId, const std::string &name, const std::string &description = {}) const;
+
+        /**
+         * @brief One page of accounts, and how many exist in total.
+         */
+        [[nodiscard]]
+        Page<Account> ListAccounts(const ListOptions &options = {}) const;
+
+        /**
+         * @brief Deletes an account. Administrator only, and it must have no namespaces or grants
+         * left.
+         *
+         * @param accountId the account to delete.
+         */
+        void DeleteAccount(const std::string &accountId) const;
+
+        // -- namespaces -------------------------------------------------------------------------
+
+        /**
+         * @brief Creates a namespace under an account. Requires admin rights on that account.
+         *
+         * @param accountId   the owning account.
+         * @param name        the namespace's name, unique within the account.
+         * @param description a description, or empty.
+         * @return the created namespace.
+         */
+        // Qualified: inside this class "Namespace" is the accessor above, which hides the type of
+        // the same name. The two are both worth their names, so the type is spelled out here.
+        [[nodiscard]]
+        EAM::Namespace CreateNamespace(const std::string &accountId, const std::string &name, const std::string &description = {}) const;
+
+        /**
+         * @brief One page of an account's namespaces, and how many exist in total.
+         *
+         * @param accountId the owning account.
+         * @param options   paging, ordering and prefix.
+         */
+        [[nodiscard]]
+        Page<EAM::Namespace> ListNamespaces(const std::string &accountId, const ListOptions &options = {}) const;
+
+        /**
+         * @brief Deletes a namespace. Requires admin rights on the account, and no grants may
+         * remain.
+         *
+         * @param accountId the owning account.
+         * @param name      the namespace's name.
+         */
+        void DeleteNamespace(const std::string &accountId, const std::string &name) const;
+
+        /**
+         * @brief Grants a user access to a namespace. Requires admin rights on the account.
+         *
+         * @param user      the user's ERN.
+         * @param accountId the owning account.
+         * @param nameSpace the namespace's name.
+         */
+        void GrantNamespaceAccess(const std::string &user, const std::string &accountId, const std::string &nameSpace) const;
+
+        /**
+         * @brief Revokes a user's access to a namespace. Requires admin rights on the account.
+         *
+         * @param user      the user's ERN.
+         * @param accountId the owning account.
+         * @param nameSpace the namespace's name.
+         */
+        void RevokeNamespaceAccess(const std::string &user, const std::string &accountId, const std::string &nameSpace) const;
+
+        // -- monitoring -------------------------------------------------------------------------
+
+        /**
+         * @brief EAM's own metrics, as the server collects them.
+         *
+         * @par
+         * Answered unparsed - the shape belongs to the monitoring module rather than to EAM.
+         */
+        [[nodiscard]]
+        boost::json::object Metrics() const;
+
+        // -- transport --------------------------------------------------------------------------
+
+        /**
+         * @brief Sends any EAM action, for one this SDK does not wrap yet.
+         *
+         * @par
+         * Public on purpose: a server that gains an action should be reachable without waiting for
+         * a release here.
+         *
+         * @param action  the action, e.g. "list-users".
+         * @param payload the request body.
+         * @return the response body as an object; a response that is not an object is answered
+         * under a "result" field.
+         * @throws ServiceError if the server refused the call.
+         * @throws EuclidError if the server could not be reached.
+         */
+        [[nodiscard]]
+        boost::json::object Call(const std::string &action, const boost::json::object &payload = {}) const;
+
+        /**
+         * @brief Builds and authenticates one request, without sending it.
+         *
+         * @par
+         * Exposed because it is what a caller debugging a refused signature wants to look at, and
+         * what a module this SDK does not wrap yet is built out of.
+         *
+         * @param target the module, e.g. "eam".
+         * @param action the action.
+         * @param body   the request body.
+         * @return the request, signed or carrying a bearer token as this session's AuthMode says.
+         * @throws EuclidError if the mode is Signature and this session has no access key.
+         */
+        [[nodiscard]]
+        Request NewRequest(const std::string &target, const std::string &action, const std::string &body) const;
+
+        /**
+         * @brief The connection this session sends on, for a module client built on top of it.
+         */
+        [[nodiscard]]
+        const HttpClient &Client() const;
+
+    private:
+
+        /**
+         * @brief Sets the headers that say who is asking and what they are scoped to. Signed,
+         * apart from the namespace.
+         */
+        void ApplyRoutingHeaders(Request &request) const;
+
+        /**
+         * @brief Signs the request, or sets the bearer token, as AuthMode says.
+         */
+        void Authenticate(Request &request, const std::string &target) const;
+
+        /**
+         * @brief Whether this request is to be signed rather than to present the token.
+         */
+        [[nodiscard]]
+        bool ShouldSign() const;
+
+        SessionOptions _options;
+        HttpClient _client;
+        std::function<std::string()> _tokenProvider;
+    };
+
+}// namespace Euclid::CDK::EAM
