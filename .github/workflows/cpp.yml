@@ -1,0 +1,88 @@
+name: cpp
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # One entry per toolchain this SDK claims to build with, and "extra" is the only thing that
+        # differs between them: which compiler to use, or - on Windows - which vcpkg triplet, since
+        # the CMakeLists builds against the static CRT and Boost has to agree with it or the link
+        # fails with LNK2038.
+        include:
+          - name: linux-gcc
+            os: ubuntu-latest
+            extra: -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14
+          - name: linux-clang
+            os: ubuntu-latest
+            extra: -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          - name: windows-msvc
+            os: windows-latest
+            extra: -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          - name: macos-appleclang
+            os: macos-latest
+            extra: ""
+
+    env:
+      # Everything vcpkg builds is written here and read back on the next run. Without it a cold
+      # Windows or macOS job spends the best part of an hour compiling Boost and OpenSSL from
+      # source, every time.
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-bincache,readwrite"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gcc-14
+        if: matrix.name == 'linux-gcc'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14
+
+      - name: Create the vcpkg binary cache directory
+        shell: bash
+        run: mkdir -p "${{ github.workspace }}/vcpkg-bincache"
+
+      - name: Cache the vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-bincache
+          # Per toolchain, because a package built for one is not usable by another, and keyed on
+          # the manifest so that adding a dependency invalidates it.
+          key: vcpkg-${{ matrix.name }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.name }}-
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: ${{ github.workspace }}/vcpkg
+          vcpkgJsonGlob: vcpkg.json
+          # The dependencies are installed by the configure step below rather than here, so that
+          # vcpkg reads the manifest exactly as a developer's own build does - the builtin-baseline
+          # in vcpkg.json is what pins the versions either way.
+          runVcpkgInstall: false
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=Debug \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                ${{ matrix.extra }}
+
+      # --config is for the Windows runner, whose default generator is multi-config and ignores
+      # CMAKE_BUILD_TYPE; it is ignored in turn by the single-config generators everywhere else.
+      - name: Build
+        run: cmake --build build --config Debug --parallel 4
+
+      - name: Test
+        run: ctest --test-dir build --build-config Debug --output-on-failure --timeout 120
