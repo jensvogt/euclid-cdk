@@ -64,6 +64,7 @@ set(EUCLID_CDK_SOURCES
         src/dto/Ens.cpp
         src/dto/Eqs.cpp
         src/dto/Esm.cpp
+        src/dto/Ess.cpp
         src/dto/Ets.cpp
         src/dto/Page.cpp
         src/eam/Eam.cpp
@@ -72,6 +73,7 @@ set(EUCLID_CDK_SOURCES
         src/ens/Ens.cpp
         src/eqs/Eqs.cpp
         src/esm/Esm.cpp
+        src/ess/Ess.cpp
         src/ets/Ets.cpp
         src/http/HttpClient.cpp)
 
@@ -93,6 +95,7 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/dto/Ens.h
         include/euclid/cdk/dto/Eqs.h
         include/euclid/cdk/dto/Esm.h
+        include/euclid/cdk/dto/Ess.h
         include/euclid/cdk/dto/Ets.h
         include/euclid/cdk/dto/Page.h
         include/euclid/cdk/eam/Eam.h
@@ -101,6 +104,7 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/ens/Ens.h
         include/euclid/cdk/eqs/Eqs.h
         include/euclid/cdk/esm/Esm.h
+        include/euclid/cdk/ess/Ess.h
         include/euclid/cdk/ets/Ets.h
         include/euclid/cdk/http/HttpClient.h
         include/euclid/cdk/http/Message.h)
