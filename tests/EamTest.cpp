@@ -18,32 +18,16 @@
 #include <euclid/cdk/eam/Eam.h>
 
 #include "FakeGateway.h"
+#include "TestSupport.h"
 
 using namespace Euclid::CDK;
 using Euclid::CDK::Test::FakeGateway;
+using Euclid::CDK::Test::FutureToken;
+using Euclid::CDK::Test::LoginResponse;
 
 namespace {
 
-    constexpr auto kAccessKeyId = "AKIAIOSFODNN7EXAMPLE";
-    constexpr auto kSecret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
-
-    std::string futureToken() {
-        const auto expiry = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() + 3600;
-        auto payload = Crypto::Base64Encode(boost::json::serialize(boost::json::object{{"exp", expiry}}));
-        std::erase(payload, '=');
-        return "header." + payload + ".signature";
-    }
-
-    std::string loginResponse() {
-        return boost::json::serialize(boost::json::object{
-                {"token", futureToken()},
-                {"accessKeyId", kAccessKeyId},
-                {"secretAccessKey", kSecret},
-                {"createdAt", "2026-09-12T10:00:00Z"},
-                {"isAdmin", true},
-                {"metadata", boost::json::object{{"region", "eu-central-1"}, {"accountId", "000000000000"}, {"user", "jens"}}},
-        });
-    }
+    constexpr auto kAccessKeyId = Test::AccessKeyId;
 
     std::string usersResponse() {
         return boost::json::serialize(boost::json::object{
@@ -66,40 +50,14 @@ namespace {
         });
     }
 
-    /**
-     * @brief Answers login, and verifies the signature on everything else the way the server does.
-     *
-     * @par
-     * This is what makes these tests worth more than a recording: a request whose signature does
-     * not verify is answered with a 401, so a client that signs one thing and sends another fails
-     * here rather than in production.
-     */
+    // Answers login, verifies the signature on everything else the way the server does, and hands
+    // back one canned body - see Test::Authenticated().
     FakeGateway::Handler gatewayHandler(const std::string &body = {}) {
-        return [body](const Request &request) {
-            const auto action = std::string(request["x-euclid-action"]);
-
-            if (action == "login") return FakeGateway::Json(200, loginResponse());
-
-            const auto *scheme = SigningScheme::Of(request);
-            if (scheme == nullptr) {
-                // No signature at all is fine when a bearer token was presented instead.
-                if (std::string(request[boost::beast::http::field::authorization]).starts_with("Bearer ")) {
-                    return FakeGateway::Json(200, body.empty() ? "{}" : body);
-                }
-                return FakeGateway::Json(401, R"({"error": "unauthenticated"})");
-            }
-
-            const auto keyId = scheme->Verify(request, [](const std::string &id) -> std::optional<std::string> {
-                return id == kAccessKeyId ? std::optional<std::string>(kSecret) : std::nullopt;
-            });
-            if (!keyId.has_value()) return FakeGateway::Json(401, R"({"error": "signature verification failed"})");
-
-            return FakeGateway::Json(200, body.empty() ? "{}" : body);
-        };
+        return Test::Answering(body);
     }
 
     EAM::Eam builder(const FakeGateway &gateway) {
-        return EAM::Eam::ForServer(gateway.BaseUrl()).UseCache(false).Credentials("jens", "secret");
+        return Test::Builder(gateway);
     }
 
 }// namespace
@@ -114,7 +72,7 @@ BOOST_AUTO_TEST_SUITE(EamLoginTest)
         BOOST_TEST(session.AccountId() == "000000000000");
         BOOST_TEST(session.Region() == "eu-central-1");
         BOOST_TEST(session.AccessKeyId() == kAccessKeyId);
-        BOOST_TEST(session.SecretAccessKey() == kSecret);
+        BOOST_TEST(session.SecretAccessKey() == Test::SecretAccessKey);
         BOOST_TEST(session.IsAdmin());
         BOOST_TEST(session.Namespace().empty());
     }
@@ -314,7 +272,7 @@ BOOST_AUTO_TEST_SUITE(EamSessionTest)
 
     BOOST_AUTO_TEST_CASE(ARefusedActionThrowsWithTheTargetAndAction) {
         const FakeGateway gateway([](const Request &request) {
-            if (std::string(request["x-euclid-action"]) == "login") return FakeGateway::Json(200, loginResponse());
+            if (std::string(request["x-euclid-action"]) == "login") return FakeGateway::Json(200, LoginResponse());
             return FakeGateway::Json(403, R"({"error": "not an administrator"})");
         });
         const auto session = builder(gateway).Login();
@@ -334,7 +292,7 @@ BOOST_AUTO_TEST_SUITE(EamSessionTest)
     // more useful than saying it could not be parsed.
     BOOST_AUTO_TEST_CASE(ANonJsonFailureBodyIsQuotedVerbatim) {
         const FakeGateway gateway([](const Request &request) {
-            if (std::string(request["x-euclid-action"]) == "login") return FakeGateway::Json(200, loginResponse());
+            if (std::string(request["x-euclid-action"]) == "login") return FakeGateway::Json(200, LoginResponse());
             return FakeGateway::Json(502, "<html>Bad Gateway</html>");
         });
         const auto session = builder(gateway).Login();
@@ -378,7 +336,7 @@ BOOST_AUTO_TEST_SUITE(EamSessionTest)
     BOOST_AUTO_TEST_CASE(SignatureModeWithoutAKeyFailsLoudly) {
         const FakeGateway gateway([](const Request &) {
             return FakeGateway::Json(200, boost::json::serialize(boost::json::object{
-                                                  {"token", futureToken()},
+                                                  {"token", FutureToken()},
                                                   {"metadata", boost::json::object{{"region", "eu-central-1"}, {"accountId", "000000000000"}, {"user", "jens"}}}}));
         });
         const auto session = builder(gateway).Auth(EAM::AuthMode::Signature).Login();

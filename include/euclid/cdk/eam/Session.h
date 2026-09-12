@@ -16,6 +16,7 @@
 #include <euclid/cdk/Export.h>
 #include <euclid/cdk/auth/SigningScheme.h>
 #include <euclid/cdk/dto/Eam.h>
+#include <euclid/cdk/dto/Page.h>
 #include <euclid/cdk/http/HttpClient.h>
 
 namespace Euclid::CDK::EAM {
@@ -49,20 +50,9 @@ namespace Euclid::CDK::EAM {
         Bearer
     };
 
-    /**
-     * @brief How a listing is paged, ordered and narrowed.
-     *
-     * @par
-     * An empty sortColumn means "whatever this listing sorts by", which each call fills in with the
-     * server's own default for it - "userId" for users, "name" for groups and namespaces.
-     */
-    struct EUCLID_CDK_API ListOptions {
-        std::string prefix;
-        long pageSize{10};
-        long pageIndex{0};
-        std::string sortColumn;
-        std::string sortDirection{"asc"};
-    };
+    // Listings are paged the same way in every module, so how one is asked for is described once in
+    // dto/Page.h - named here as well, since EAM::ListOptions is what the calls below take.
+    using CDK::ListOptions;
 
     /**
      * @brief The optional half of Register().
@@ -513,18 +503,44 @@ namespace Euclid::CDK::EAM {
         [[nodiscard]]
         const HttpClient &Client() const;
 
-    private:
+        // -- what a module client builds its requests out of ------------------------------------
 
         /**
          * @brief Sets the headers that say who is asking and what they are scoped to. Signed,
          * apart from the namespace.
+         *
+         * @par
+         * Public because a module client is a request of another module made on this session's
+         * identity, and these are what say whose identity that is - see CDK::ModuleClient.
          */
         void ApplyRoutingHeaders(Request &request) const;
 
         /**
          * @brief Signs the request, or sets the bearer token, as AuthMode says.
+         *
+         * @param request the request to authenticate.
+         * @param target  the module it is addressed to, which the signature covers.
+         * @throws EuclidError if the mode is Signature and this session has no access key.
          */
         void Authenticate(Request &request, const std::string &target) const;
+
+        /**
+         * @brief Sets the bearer token, whatever AuthMode says.
+         *
+         * @par
+         * What the byte-carrying actions of a module use - ESM's put-object and the three like it -
+         * so that every euclid client writes an object the same way. A session that asked for
+         * AuthMode::Signature is signed instead: it asked not to be handed a token silently.
+         */
+        void ApplyBearerToken(Request &request) const;
+
+        /**
+         * @brief Whether this session was told to sign every request, byte-carrying ones included.
+         */
+        [[nodiscard]]
+        bool AlwaysSigns() const;
+
+    private:
 
         /**
          * @brief Whether this request is to be signed rather than to present the token.

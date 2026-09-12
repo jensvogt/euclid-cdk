@@ -75,6 +75,14 @@ namespace Euclid::CDK::Test {
         return response;
     }
 
+    RawResponse FakeGateway::Bytes(const int status, const std::string &body) {
+        RawResponse response(static_cast<http::status>(status), 11);
+        response.set(http::field::content_type, "application/octet-stream");
+        response.body() = body;
+        response.prepare_payload();
+        return response;
+    }
+
     void FakeGateway::Run() {
 
         for (;;) {

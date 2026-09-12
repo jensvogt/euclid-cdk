@@ -15,20 +15,6 @@ namespace Euclid::CDK::EAM {
 
         namespace http = boost::beast::http;
 
-        /**
-         * @brief A listing's paging and ordering, with the server's defaults filled in where the
-         * caller said nothing.
-         */
-        boost::json::object listPayload(const ListOptions &options, const std::string &defaultSortColumn) {
-            return {
-                    {"prefix", options.prefix},
-                    {"pageSize", options.pageSize},
-                    {"pageIndex", options.pageIndex},
-                    {"sortColumn", options.sortColumn.empty() ? defaultSortColumn : options.sortColumn},
-                    {"sortDirection", options.sortDirection.empty() ? "asc" : options.sortDirection},
-            };
-        }
-
     }// namespace
 
     Session::Session(SessionOptions options)
@@ -89,7 +75,7 @@ namespace Euclid::CDK::EAM {
     // -- users ----------------------------------------------------------------------------------
 
     Page<User> Session::ListUsers(const ListOptions &options) const {
-        return ToPage<User>(Call("list-users", listPayload(options, "userId")), "users", ToUser);
+        return ToPage<User>(Call("list-users", ListPayload(options, "userId")), "users", ToUser);
     }
 
     User Session::Register(const std::string &userId, const std::string &password, const RegisterOptions &options) const {
@@ -141,7 +127,7 @@ namespace Euclid::CDK::EAM {
     }
 
     Page<UserGroup> Session::ListUserGroups(const ListOptions &options) const {
-        return ToPage<UserGroup>(Call("list-user-groups", listPayload(options, "name")), "userGroups", ToUserGroup);
+        return ToPage<UserGroup>(Call("list-user-groups", ListPayload(options, "name")), "userGroups", ToUserGroup);
     }
 
     void Session::AddUserToUserGroup(const std::string &userGroup, const std::string &user) const {
@@ -164,7 +150,7 @@ namespace Euclid::CDK::EAM {
     }
 
     Page<Account> Session::ListAccounts(const ListOptions &options) const {
-        return ToPage<Account>(Call("list-accounts", listPayload(options, "accountId")), "accounts", ToAccount);
+        return ToPage<Account>(Call("list-accounts", ListPayload(options, "accountId")), "accounts", ToAccount);
     }
 
     void Session::DeleteAccount(const std::string &accountId) const {
@@ -181,7 +167,7 @@ namespace Euclid::CDK::EAM {
     }
 
     Page<EAM::Namespace> Session::ListNamespaces(const std::string &accountId, const ListOptions &options) const {
-        auto payload = listPayload(options, "name");
+        auto payload = ListPayload(options, "name");
         payload["accountId"] = accountId;
         return ToPage<EAM::Namespace>(Call("list-namespaces", payload), "namespaces", ToNamespace);
     }
@@ -247,9 +233,15 @@ namespace Euclid::CDK::EAM {
         if (ShouldSign()) {
             _options.signingScheme->Sign(request, _options.accessKeyId, _options.secretAccessKey, _options.region, target);
         } else {
-            request.set(http::field::authorization, "Bearer " + CurrentToken());
+            ApplyBearerToken(request);
         }
     }
+
+    void Session::ApplyBearerToken(Request &request) const {
+        request.set(http::field::authorization, "Bearer " + CurrentToken());
+    }
+
+    bool Session::AlwaysSigns() const { return _options.auth == AuthMode::Signature; }
 
     bool Session::ShouldSign() const {
 

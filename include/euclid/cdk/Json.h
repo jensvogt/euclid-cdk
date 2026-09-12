@@ -3,6 +3,7 @@
 #pragma once
 
 // C++ includes
+#include <map>
 #include <string>
 #include <vector>
 
@@ -80,6 +81,17 @@ namespace Euclid::CDK {
          */
         [[nodiscard]]
         static std::vector<std::string> Strings(const boost::json::value &value, const std::string &name);
+
+        /**
+         * @brief An object-of-strings field, e.g. a bucket's tags.
+         *
+         * @param value the containing value.
+         * @param name  field name.
+         * @return the entries, skipping any whose value is not a string; empty when the field is
+         * absent or not an object.
+         */
+        [[nodiscard]]
+        static std::map<std::string, std::string> StringMap(const boost::json::value &value, const std::string &name);
 
         /**
          * @brief An array-of-objects field.

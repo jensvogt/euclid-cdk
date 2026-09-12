@@ -12,6 +12,7 @@
 // Euclid includes
 #include <euclid/cdk/Export.h>
 #include <euclid/cdk/Json.h>
+#include <euclid/cdk/dto/Page.h>
 
 /**
  * @file
@@ -26,6 +27,11 @@
  */
 
 namespace Euclid::CDK::EAM {
+
+    // Paging is the same in every module, so it is described once in dto/Page.h - named here as
+    // well, since EAM::Page<User> is what a caller of ListUsers() reads in the signature.
+    using CDK::Page;
+    using CDK::ToPage;
 
     /**
      * @brief The caller identity a response echoes back, from the server's BaseDto.
@@ -137,19 +143,6 @@ namespace Euclid::CDK::EAM {
     };
 
     /**
-     * @brief One page of something, and how many exist in total.
-     *
-     * @par
-     * "total" counts everything the listing matched, not what this page holds - it is what a caller
-     * pages through.
-     */
-    template<typename T>
-    struct Page {
-        long total{};
-        std::vector<T> items;
-    };
-
-    /**
      * @brief Reads a "metadata" object.
      */
     [[nodiscard]]
@@ -202,23 +195,5 @@ namespace Euclid::CDK::EAM {
      */
     [[nodiscard]]
     EUCLID_CDK_API CreateAccessKeyResult ToCreateAccessKeyResult(const boost::json::value &value);
-
-    /**
-     * @brief Reads one page of whatever a listing returns, under the field the server puts it in.
-     *
-     * @param value  the response.
-     * @param field  the field holding the array, e.g. "users".
-     * @param parse  reader for one element.
-     * @return the page.
-     */
-    template<typename T, typename Parser>
-    [[nodiscard]] Page<T> ToPage(const boost::json::value &value, const std::string &field, Parser parse) {
-        Page<T> page;
-        page.total = Json::Number(value, "total");
-        for (const auto &document: Json::Documents(value, field)) {
-            page.items.push_back(parse(document));
-        }
-        return page;
-    }
 
 }// namespace Euclid::CDK::EAM

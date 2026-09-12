@@ -48,6 +48,16 @@ namespace Euclid::CDK {
         return strings;
     }
 
+    std::map<std::string, std::string> Json::StringMap(const boost::json::value &value, const std::string &name) {
+        std::map<std::string, std::string> entries;
+        const auto *found = field(value, name);
+        if (found == nullptr || !found->is_object()) return entries;
+        for (const auto &[key, held]: found->as_object()) {
+            if (held.is_string()) entries.emplace(key, held.as_string());
+        }
+        return entries;
+    }
+
     std::vector<boost::json::value> Json::Documents(const boost::json::value &value, const std::string &name) {
         std::vector<boost::json::value> documents;
         const auto *found = field(value, name);

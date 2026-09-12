@@ -29,10 +29,10 @@ namespace {
 
     void printUsers(const EAM::Session &session) {
 
-        const auto page = session.ListUsers({.pageSize = 10});
-        std::cout << "\nusers (" << page.total << " in total)\n";
+        const auto [total, items] = session.ListUsers({.pageSize = 10});
+        std::cout << "\nusers (" << total << " in total)\n";
 
-        for (const auto &user: page.items) {
+        for (const auto &user: items) {
             std::cout << "  " << user.userId << "  " << user.email << "  " << user.ern << "\n";
             for (const auto &grant: user.accountGrants) {
                 std::cout << "      grant on " << grant.accountId << (grant.isAdmin ? " (admin)" : "") << ", namespaces:";
@@ -44,20 +44,20 @@ namespace {
 
     void printUserGroups(const EAM::Session &session) {
 
-        const auto page = session.ListUserGroups({.pageSize = 10});
-        std::cout << "\nuser groups (" << page.total << " in total)\n";
+        const auto [total, items] = session.ListUserGroups({.pageSize = 10});
+        std::cout << "\nuser groups (" << total << " in total)\n";
 
-        for (const auto &group: page.items) {
+        for (const auto &group: items) {
             std::cout << "  " << group.name << "  " << group.userIds.size() << " member(s)  " << group.description << "\n";
         }
     }
 
     void printAccountsAndNamespaces(const EAM::Session &session) {
 
-        const auto accounts = session.ListAccounts({.pageSize = 10});
-        std::cout << "\naccounts (" << accounts.total << " in total)\n";
+        const auto [total, items] = session.ListAccounts({.pageSize = 10});
+        std::cout << "\naccounts (" << total << " in total)\n";
 
-        for (const auto &account: accounts.items) {
+        for (const auto &account: items) {
             std::cout << "  " << account.accountId << "  " << account.name << "\n";
             for (const auto namespaces = session.ListNamespaces(account.accountId); const auto &nameSpace: namespaces.items) {
                 std::cout << "      namespace " << nameSpace.name << "  " << nameSpace.description << "\n";
@@ -70,8 +70,8 @@ namespace {
         // The secret of an existing key is never shown again - only the key that CreateAccessKey()
         // answers with carries one, and only that once.
         std::cout << "\naccess keys\n";
-        for (const auto &key: session.ListAccessKeys()) {
-            std::cout << "  " << key.accessKeyId << (key.active ? "  active" : "  inactive") << "  created " << key.createdAt << "\n";
+        for (const auto &[accessKeyId, active, createdAt]: session.ListAccessKeys()) {
+            std::cout << "  " << accessKeyId << (active ? "  active" : "  inactive") << "  created " << createdAt << "\n";
         }
     }
 
@@ -94,7 +94,7 @@ int main(const int argc, char *argv[]) {
         auto eam = EAM::Eam::ForServer(baseUrl).Credentials(userId, password);
         if (!nameSpace.empty()) eam.Namespace(nameSpace);
 
-        auto session = eam.Login();
+        const auto session = eam.Login();
 
         std::cout << "logged in to " << session.BaseUrl() << "\n"
                   << "  user       " << session.UserId() << (session.IsAdmin() ? " (administrator)" : "") << "\n"

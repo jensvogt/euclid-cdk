@@ -3,10 +3,13 @@ find_package(Boost CONFIG REQUIRED COMPONENTS unit_test_framework)
 add_executable(euclid-cdk-tests
         CredentialsTest.cpp
         EamTest.cpp
+        EsmTest.cpp
         FakeGateway.cpp
+        FakeStorage.cpp
         HttpSignatureTest.cpp
         SigV4Test.cpp
         TestMain.cpp
+        TestSupport.cpp
         UrlTest.cpp)
 
 target_link_libraries(euclid-cdk-tests PRIVATE ${EUCLID_CDK_DEFAULT_TARGET} Boost::unit_test_framework)

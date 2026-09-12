@@ -53,13 +53,18 @@ set(EUCLID_CDK_SOURCES
         src/Errors.cpp
         src/Euclid.cpp
         src/Json.cpp
+        src/ModuleClient.cpp
         src/Url.cpp
         src/auth/HttpSignature.cpp
         src/auth/SigV4.cpp
         src/auth/SigningScheme.cpp
+        src/dto/Com.cpp
         src/dto/Eam.cpp
+        src/dto/Esm.cpp
+        src/dto/Page.cpp
         src/eam/Eam.cpp
         src/eam/Session.cpp
+        src/esm/Esm.cpp
         src/http/HttpClient.cpp)
 
 set(EUCLID_CDK_HEADERS
@@ -69,13 +74,18 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/Euclid.h
         include/euclid/cdk/Export.h
         include/euclid/cdk/Json.h
+        include/euclid/cdk/ModuleClient.h
         include/euclid/cdk/Url.h
         include/euclid/cdk/auth/HttpSignature.h
         include/euclid/cdk/auth/SigV4.h
         include/euclid/cdk/auth/SigningScheme.h
+        include/euclid/cdk/dto/Com.h
         include/euclid/cdk/dto/Eam.h
+        include/euclid/cdk/dto/Esm.h
+        include/euclid/cdk/dto/Page.h
         include/euclid/cdk/eam/Eam.h
         include/euclid/cdk/eam/Session.h
+        include/euclid/cdk/esm/Esm.h
         include/euclid/cdk/http/HttpClient.h
         include/euclid/cdk/http/Message.h)
 

@@ -80,6 +80,16 @@ namespace Euclid::CDK::Test {
         [[nodiscard]]
         static RawResponse Json(int status, const std::string &body);
 
+        /**
+         * @brief A response whose body is bytes - what ESM's get-object and download-part answer
+         * with.
+         *
+         * @param status HTTP status.
+         * @param body   the bytes.
+         */
+        [[nodiscard]]
+        static RawResponse Bytes(int status, const std::string &body);
+
     private:
 
         void Run();
