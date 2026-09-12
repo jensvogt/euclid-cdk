@@ -23,9 +23,9 @@
  *
  * @par What is here
  * EAM - euclid's access management module - and the two signing schemes a euclid client
- * authenticates with; and six modules reached through a session EAM answered with: ESM (storage),
- * EQS (queues), ENS (notifications), EKM (keys and certificates), ESS (secrets) and ETS (the FTP
- * and SFTP endpoints onto a bucket).
+ * authenticates with; and seven modules reached through a session EAM answered with: ESM (storage),
+ * EQS (queues), ENS (notifications), EKM (keys and certificates), EKV (tables of items), ESS
+ * (secrets) and ETS (the FTP and SFTP endpoints onto a bucket).
  *
  * @code
  * const ESM::Esm esm(session);
@@ -38,7 +38,7 @@
  * @endcode
  *
  * @par
- * The rest (EKV, EAP, EAG) speak the same protocol through the same client and will follow.
+ * The rest (EAP, EAG) speak the same protocol through the same client and will follow.
  * Until they do, CDK::ModuleClient is what one is built out of, and EAM::Session::NewRequest() and
  * CDK::HttpClient reach any action this SDK does not name.
  *
@@ -64,6 +64,7 @@
 #include <euclid/cdk/dto/Com.h>
 #include <euclid/cdk/dto/Eam.h>
 #include <euclid/cdk/dto/Ekm.h>
+#include <euclid/cdk/dto/Ekv.h>
 #include <euclid/cdk/dto/Ens.h>
 #include <euclid/cdk/dto/Eqs.h>
 #include <euclid/cdk/dto/Esm.h>
@@ -73,6 +74,7 @@
 #include <euclid/cdk/eam/Eam.h>
 #include <euclid/cdk/eam/Session.h>
 #include <euclid/cdk/ekm/Ekm.h>
+#include <euclid/cdk/ekv/Ekv.h>
 #include <euclid/cdk/ens/Ens.h>
 #include <euclid/cdk/eqs/Eqs.h>
 #include <euclid/cdk/esm/Esm.h>
