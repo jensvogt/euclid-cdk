@@ -254,6 +254,31 @@ namespace Euclid::CDK::ENS {
         TopicRetentionResult SetTopicRetention(const std::string &ern, long retentionPeriod) const;
 
         /**
+         * @brief Changes the largest message a topic accepts, and answers with the length it now
+         * has.
+         *
+         * @par
+         * What is published from here on, and nothing else: a message already in the topic was
+         * accepted under the rule in force when it arrived, and lowering the limit is not a reason
+         * to go back and lose it.
+         *
+         * @par
+         * The length is the body's alone - the same figure GetTopicMetadata() reports - so the limit
+         * is in the units of the numbers it is compared against. Attributes travel alongside and are
+         * not counted.
+         *
+         * @param ern              the topic.
+         * @param maxMessageLength bytes, and a positive number of them. Zero is not "no limit" here
+         * but a topic that accepts nothing, so the server refuses it - where EQS takes zero for a
+         * queue and reads it as "no limit of its own". Taking nothing for a while is what
+         * StopTopic() is for, and it says so reversibly.
+         * @throws EuclidError if the length is not positive, which the server refuses anyway - this
+         * just says so before the round trip.
+         */
+        [[nodiscard]]
+        long SetTopicMaxMessageLength(const std::string &ern, long maxMessageLength) const;
+
+        /**
          * @brief Deletes every message a topic has kept, leaving the topic and its subscriptions in
          * place.
          *

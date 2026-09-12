@@ -179,6 +179,21 @@ namespace Euclid::CDK::EQS {
     };
 
     /**
+     * @brief A queue's message-length limit after setting it, and what a send is measured against.
+     *
+     * @par
+     * The two differ for a queue carrying no limit of its own - "maxMessageLength" zero, which is
+     * what a create-queue that omitted the field stored. A send is measured against the
+     * installation's figure in that case rather than refusing everything, and
+     * "effectiveMaxMessageLength" is that figure.
+     */
+    struct EUCLID_CDK_API MaxMessageLengthResult {
+        std::string ern;
+        long maxMessageLength{};
+        long effectiveMaxMessageLength{};
+    };
+
+    /**
      * @brief One queue a redrive put messages back on, and how many went there.
      */
     struct EUCLID_CDK_API RedriveTarget {
@@ -249,6 +264,12 @@ namespace Euclid::CDK::EQS {
      */
     [[nodiscard]]
     EUCLID_CDK_API QueueStatusResult ToQueueStatusResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads a set-queue-max-message-length response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API MaxMessageLengthResult ToMaxMessageLengthResult(const boost::json::value &value);
 
     /**
      * @brief Reads one queue a redrive put messages back on.

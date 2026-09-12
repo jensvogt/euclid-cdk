@@ -7,6 +7,7 @@
 #include <utility>
 
 // Euclid includes
+#include <euclid/cdk/Errors.h>
 #include <euclid/cdk/Json.h>
 #include <euclid/cdk/eqs/Eqs.h>
 
@@ -94,6 +95,22 @@ namespace Euclid::CDK::EQS {
 
     long Eqs::SetQueueVisibility(const std::string &ern, const long visibility) const {
         return NumberOf("set-queue-visibility", {{"ern", ern}, {"visibility", visibility}}, "visibility");
+    }
+
+    long Eqs::SetQueueDelay(const std::string &ern, const long delay) const {
+        if (delay < 0 || delay > MaxDelay) {
+            throw EuclidError("delay has to be between 0 and " + std::to_string(MaxDelay) + " seconds");
+        }
+        return NumberOf("set-queue-delay", {{"ern", ern}, {"delay", delay}}, "delay");
+    }
+
+    MaxMessageLengthResult Eqs::SetQueueMaxMessageLength(const std::string &ern, const long maxMessageLength) const {
+        // Zero is allowed and is not "accept nothing": it is the queue carrying no limit of its own,
+        // which a send then measures against the installation's figure instead.
+        if (maxMessageLength < 0) {
+            throw EuclidError("maxMessageLength cannot be negative; zero leaves the queue with no limit of its own");
+        }
+        return ToMaxMessageLengthResult(Call("set-queue-max-message-length", {{"ern", ern}, {"maxMessageLength", maxMessageLength}}));
     }
 
     RedriveDlqResult Eqs::RedriveDlq(const std::string &ern, const std::string &targetErn) const {

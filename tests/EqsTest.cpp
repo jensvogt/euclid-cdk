@@ -209,6 +209,52 @@ BOOST_AUTO_TEST_SUITE(EqsQueueTest)
         BOOST_TEST(body.at("nameSpace").as_string() == "reports");
     }
 
+    // Only what is sent from here on: a message already waiting keeps the timestamp it was given.
+    BOOST_AUTO_TEST_CASE(ChangesHowLongASentMessageWaits) {
+        const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders", "delay": 30})"));
+
+        BOOST_TEST(client.eqs.SetQueueDelay(kQueue, 30) == 30L);
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("ern").as_string() == kQueue);
+        BOOST_TEST(body.at("delay").as_int64() == 30);
+    }
+
+    // A delay is for smoothing a burst, not for scheduling, and the server holds it to SQS's bound.
+    BOOST_AUTO_TEST_CASE(RefusesADelayOutsideTheBoundBeforeTheRoundTrip) {
+        const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders", "delay": 0})"));
+
+        BOOST_CHECK_THROW(std::ignore = client.eqs.SetQueueDelay(kQueue, -1), EuclidError);
+        BOOST_CHECK_THROW(std::ignore = client.eqs.SetQueueDelay(kQueue, EQS::MaxDelay + 1), EuclidError);
+        BOOST_TEST(client.gateway.Received().size() == 1U);// the login, and nothing else
+
+        // The bound itself is allowed.
+        BOOST_TEST(client.eqs.SetQueueDelay(kQueue, EQS::MaxDelay) == 0L);
+    }
+
+    BOOST_AUTO_TEST_CASE(ChangesTheLargestMessageAQueueAccepts) {
+        const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders", "maxMessageLength": 262144,
+                                                   "effectiveMaxMessageLength": 262144})"));
+
+        const auto result = client.eqs.SetQueueMaxMessageLength(kQueue, 262144);
+        BOOST_TEST(result.maxMessageLength == 262144L);
+        BOOST_TEST(result.effectiveMaxMessageLength == 262144L);
+        BOOST_TEST(lastBody(client.gateway).at("maxMessageLength").as_int64() == 262144);
+    }
+
+    // Zero is the queue having no limit of its own, and the answer says what a send is then measured
+    // against - which is not the figure that was stored.
+    BOOST_AUTO_TEST_CASE(TakesZeroToMeanNoLimitOfTheQueuesOwn) {
+        const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders", "maxMessageLength": 0,
+                                                   "effectiveMaxMessageLength": 1048576})"));
+
+        const auto result = client.eqs.SetQueueMaxMessageLength(kQueue, EQS::InstallationMaxMessageLength);
+        BOOST_TEST(result.maxMessageLength == 0L);
+        BOOST_TEST(result.effectiveMaxMessageLength == EQS::DefaultMaxMessageLength);
+
+        // Negative is a typo rather than a value, here as on the server.
+        BOOST_CHECK_THROW(std::ignore = client.eqs.SetQueueMaxMessageLength(kQueue, -1), EuclidError);
+    }
+
     // What a redrive could not place is reported rather than guessed at.
     BOOST_AUTO_TEST_CASE(RedrivesADeadLetterQueue) {
         const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders-dlq", "messages": 7, "remaining": 2,

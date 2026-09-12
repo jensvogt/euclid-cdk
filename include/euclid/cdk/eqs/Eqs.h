@@ -38,8 +38,33 @@ namespace Euclid::CDK::EQS {
 
     /**
      * @brief The largest message a queue accepts, in bytes.
+     *
+     * @par
+     * The server's own default, both for a queue created without the field and for one whose stored
+     * limit is InstallationMaxMessageLength.
      */
     inline constexpr long DefaultMaxMessageLength = 1024 * 1024;
+
+    /**
+     * @brief The message-length limit that means "no limit of this queue's own".
+     *
+     * @par
+     * A send is then measured against the installation's figure rather than refused, which is what
+     * makes zero the answer for a queue that has no opinion - and not a queue that accepts nothing.
+     * See EQS::Eqs::SetQueueMaxMessageLength().
+     */
+    inline constexpr long InstallationMaxMessageLength = 0;
+
+    /**
+     * @brief The longest delay a queue may hold its messages for, in seconds.
+     *
+     * @par
+     * The bound AWS SQS holds DelaySeconds to, and the one euclid refuses above. A delay is for
+     * smoothing a burst or letting a writer finish, not for scheduling: something that has to wait a
+     * quarter of an hour wants a timestamp of its own rather than a queue that holds everything
+     * back.
+     */
+    inline constexpr long MaxDelay = 900;
 
     /**
      * @brief How many messages one receive takes unless the caller says otherwise.
@@ -324,6 +349,45 @@ namespace Euclid::CDK::EQS {
          */
         [[nodiscard]]
         long SetQueueVisibility(const std::string &ern, long visibility) const;
+
+        /**
+         * @brief Changes how long a sent message waits before it can be received at all, and answers
+         * with the delay the queue now has.
+         *
+         * @par
+         * Only what is sent from here on. A message already waiting had its delay turned into a
+         * timestamp when it arrived, and moving that now would either release a message early or
+         * hold back one that was promised sooner.
+         *
+         * @param ern   the queue.
+         * @param delay seconds, from zero to MaxDelay.
+         * @throws EuclidError if the delay is outside that range, which the server refuses anyway -
+         * this just says so before the round trip.
+         */
+        [[nodiscard]]
+        long SetQueueDelay(const std::string &ern, long delay) const;
+
+        /**
+         * @brief Changes the largest message a queue accepts, and answers with what it now holds
+         * alongside what a send is actually measured against.
+         *
+         * @par
+         * What is sent from here on: a message already in the queue was measured against the limit
+         * in force when it arrived, and lowering this is not a reason to go back and reject it.
+         *
+         * @par
+         * The length is the body's alone - the same figure Message::size carries and
+         * GetQueueMetadata() reports - so the limit is in the units of the numbers it is compared
+         * against. Attributes travel alongside and are not counted.
+         *
+         * @param ern              the queue.
+         * @param maxMessageLength bytes, or InstallationMaxMessageLength to leave the queue with no
+         * limit of its own. ENS refuses that value for a topic; EQS takes it, and the two are not
+         * the same rule.
+         * @throws EuclidError if the length is negative, which the server refuses anyway.
+         */
+        [[nodiscard]]
+        MaxMessageLengthResult SetQueueMaxMessageLength(const std::string &ern, long maxMessageLength) const;
 
         /**
          * @brief Moves messages out of a dead letter queue and back onto the queues they came from.

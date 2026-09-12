@@ -56,6 +56,16 @@ namespace Euclid::CDK::ENS {
         return ToTopicRetentionResult(Call("set-topic-retention", {{"ern", ern}, {"retentionPeriod", retentionPeriod}}));
     }
 
+    long Ens::SetTopicMaxMessageLength(const std::string &ern, const long maxMessageLength) const {
+        // Zero is not "no limit" on a topic, it is a topic that accepts nothing - and EQS reads the
+        // same zero as "no limit of this queue's own". The two are different rules, and this is the
+        // one the server holds ENS to.
+        if (maxMessageLength <= 0) {
+            throw EuclidError("maxMessageLength has to be a positive number of bytes; StopTopic() is what takes nothing for a while");
+        }
+        return NumberOf("set-topic-max-message-length", {{"ern", ern}, {"maxMessageLength", maxMessageLength}}, "maxMessageLength");
+    }
+
     void Ens::PurgeTopic(const std::string &ern) const {
         std::ignore = Call("purge-topic", {{"ern", ern}});
     }

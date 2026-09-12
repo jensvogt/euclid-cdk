@@ -108,6 +108,15 @@ namespace Euclid::CDK::EQS {
         };
     }
 
+    MaxMessageLengthResult ToMaxMessageLengthResult(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                .maxMessageLength = Json::Number(value, "maxMessageLength"),
+                // Falls back to the stored figure, which is what it is whenever that is not zero.
+                .effectiveMaxMessageLength = Json::Number(value, "effectiveMaxMessageLength", Json::Number(value, "maxMessageLength")),
+        };
+    }
+
     RedriveTarget ToRedriveTarget(const boost::json::value &value) {
         return {.queueErn = Json::Text(value, "queueErn"), .messages = Json::Number(value, "messages")};
     }

@@ -243,6 +243,25 @@ BOOST_AUTO_TEST_SUITE(EnsRetentionTest)
         BOOST_TEST(client.gateway.Received().size() == 1U);// the login, and nothing else
     }
 
+    BOOST_AUTO_TEST_CASE(ChangesTheLargestMessageATopicAccepts) {
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/order-events", "maxMessageLength": 262144})"));
+
+        BOOST_TEST(client.ens.SetTopicMaxMessageLength(kTopic, 262144) == 262144L);
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("ern").as_string() == kTopic);
+        BOOST_TEST(body.at("maxMessageLength").as_int64() == 262144);
+    }
+
+    // The one place ENS and EQS read the same zero differently: a queue with no limit of its own is
+    // measured against the installation's figure, while a topic that accepts nothing is refused.
+    BOOST_AUTO_TEST_CASE(RefusesAMaxMessageLengthOfNothing) {
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/order-events", "maxMessageLength": 0})"));
+
+        BOOST_CHECK_THROW(std::ignore = client.ens.SetTopicMaxMessageLength(kTopic, 0), EuclidError);
+        BOOST_CHECK_THROW(std::ignore = client.ens.SetTopicMaxMessageLength(kTopic, -1), EuclidError);
+        BOOST_TEST(client.gateway.Received().size() == 1U);// the login, and nothing else
+    }
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(EnsMessageTest)

@@ -151,6 +151,15 @@ changes, and `ENS::RetentionForever` (-1), which is not a very long period but t
 the server stores such a message with no expiry, which is what its TTL index ignores, so the topic
 grows without limit and only `PurgeTopic()` empties it.
 
+Three things a queue or a topic is created with can be changed afterwards rather than only at
+creation: `Eqs::SetQueueDelay()`, `Eqs::SetQueueMaxMessageLength()` and
+`Ens::SetTopicMaxMessageLength()`. Each applies to what is sent from then on — a message already
+waiting keeps the release time it was given, and one already stored was measured against the limit
+in force when it arrived. The two length limits read the same zero differently, which is the
+server's rule rather than a slip: a queue with `EQS::InstallationMaxMessageLength` has no limit of
+its own and is measured against the installation's figure, while a topic that accepts nothing is
+refused outright — holding a topic for a while is what `StopTopic()` is for, and it is reversible.
+
 Two smaller things worth knowing. `Eqs::AsInternal()` is a view of the client whose requests are
 marked as euclid's own traffic, for the polling that measures a system rather than uses it; without
 it, instrumentation keeps a pool permanently awake and makes an idle module look busy.
