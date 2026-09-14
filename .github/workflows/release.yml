@@ -1,0 +1,162 @@
+name: release
+
+# Pushing a v* tag builds the libraries for every platform this SDK claims to support and attaches
+# them to the release for that tag. The manual trigger builds the same archives from whatever main
+# says without touching a release, which is how this workflow is tried out - and what the first
+# release after it lands needs, since a workflow only runs for a tag if it already existed at that
+# tag's commit.
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The same three platforms cpp.yml builds, minus the second Linux compiler: what is attached
+        # here is a library rather than a proof that it compiles twice.
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            extra: -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14
+          - name: windows-x64
+            os: windows-latest
+            extra: -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          - name: macos-arm64
+            os: macos-latest
+            extra: ""
+
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-bincache,readwrite"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gcc-14
+        if: matrix.name == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14
+
+      - name: Create the vcpkg binary cache directory
+        shell: bash
+        run: mkdir -p "${{ github.workspace }}/vcpkg-bincache"
+
+      - name: Cache the vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-bincache
+          # Release builds of the dependencies, which are not the Debug ones cpp.yml caches.
+          key: vcpkg-release-${{ matrix.name }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-release-${{ matrix.name }}-
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: ${{ github.workspace }}/vcpkg
+          vcpkgJsonGlob: vcpkg.json
+          runVcpkgInstall: false
+
+      # The tag is what somebody reads; version.txt is what the library reports as its own version
+      # and what the archives are named after. If the two disagree, the tag is the one nobody can
+      # check afterwards.
+      - name: Check the tag against version.txt
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tagged="${GITHUB_REF_NAME#v}"
+          declared="$(cat version.txt)"
+          if [ "$tagged" != "$declared" ]; then
+            echo "tag $GITHUB_REF_NAME says $tagged, version.txt says $declared" >&2
+            exit 1
+          fi
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                ${{ matrix.extra }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      # Publishing something that was never tested is the one mistake this workflow could make that
+      # nobody can take back: an archive attached to a tag can be deleted, never replaced in the
+      # hands of whoever already fetched it.
+      - name: Test
+        env:
+          BOOST_TEST_LOG_LEVEL: test_suite
+        run: ctest --test-dir build --build-config Release --verbose --timeout 120
+
+      - name: Stage the install tree
+        shell: bash
+        run: |
+          version="$(cat version.txt)"
+          stage="stage/euclid-cdk-${version}-${{ matrix.name }}"
+          cmake --install build --config Release --prefix "$stage"
+          # The two files somebody unpacking this will look for first, and neither is installed by
+          # CMake: the licence the archive is under, and how to build against what is in it.
+          cp LICENSE README.md "$stage/"
+          echo "EUCLID_CDK_STAGE=$stage" >> "$GITHUB_ENV"
+          echo "EUCLID_CDK_ARCHIVE=euclid-cdk-${version}-${{ matrix.name }}" >> "$GITHUB_ENV"
+
+      # cmake -E tar rather than tar or Compress-Archive: one command that behaves the same on all
+      # three runners, and it is already on every one of them.
+      - name: Archive
+        shell: bash
+        working-directory: stage
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cmake -E tar cf "../${EUCLID_CDK_ARCHIVE}.zip" --format=zip "${EUCLID_CDK_ARCHIVE}"
+          else
+            cmake -E tar czf "../${EUCLID_CDK_ARCHIVE}.tar.gz" "${EUCLID_CDK_ARCHIVE}"
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.EUCLID_CDK_ARCHIVE }}
+          path: |
+            euclid-cdk-*.tar.gz
+            euclid-cdk-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Attach to the release
+    runs-on: ubuntu-latest
+    needs: package
+    # A manual run builds the archives and stops there: there is no tag to attach them to.
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download the archives
+        uses: actions/download-artifact@v4
+        with:
+          path: archives
+          merge-multiple: true
+
+      # Creates the release when the tag has none, and otherwise leaves the one that is there alone
+      # - so a release written by hand keeps its notes and only gains the archives.
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" \
+                --title "euclid-cdk ${GITHUB_REF_NAME#v}" \
+                --generate-notes
+          fi
+          gh release upload "${GITHUB_REF_NAME}" archives/* --clobber
