@@ -39,7 +39,7 @@ namespace Euclid::CDK {
      * Signature/Signature-Input - so a server can accept both at once and tell which a request
      * used. Of() is that test.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API SigningScheme {
     public:

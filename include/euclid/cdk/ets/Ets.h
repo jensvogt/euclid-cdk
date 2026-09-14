@@ -158,7 +158,7 @@ namespace Euclid::CDK::ETS {
      * Every action here is administrator-only, server-side. EAM::Session::IsAdmin() says whether the
      * logged-in user is one, though the server enforces it regardless.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Ets final : public ModuleClient {
     public:

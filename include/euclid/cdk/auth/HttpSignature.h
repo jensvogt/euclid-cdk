@@ -47,7 +47,7 @@ namespace Euclid::CDK {
      * signature that carries one is accepted here and the tag ignored, which is what lets this
      * interoperate with a signer that adds one.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API HttpSignature {
     public:

@@ -105,7 +105,7 @@ BOOST_AUTO_TEST_SUITE(EqsQueueTest)
                                            {"maxMessageLength", 262144},
                                            {"maxReceiveCount", 3},
                                            {"deadLetterQueueArn", "ern:queue/orders-dlq"},
-                                           {"priority", "MIDDLE"},
+                                           {"priority", "MEDIUM"},
                                            {"status", "AVAILABLE"},
                                            {"created", "2026-01-01T00:00:00Z"}},
                                    boost::json::object{{"name", "euclid-internal"}, {"internal", true}}}}});
@@ -377,7 +377,7 @@ BOOST_AUTO_TEST_SUITE(EqsMessageTest)
     BOOST_AUTO_TEST_CASE(ReadsAMessagesMetadataAndExtendsItsLease) {
         const EqsClient client(Test::Answering(R"({"messageId": "m-1", "queueErn": "ern:queue/orders",
                                                    "receiptHandle": "receipt-1", "status": "INVISIBLE",
-                                                   "priority": "MIDDLE", "size": 14, "receivedCount": 2,
+                                                   "priority": "MEDIUM", "size": 14, "receivedCount": 2,
                                                    "visibilityTimeout": 30, "contentType": "application/json"})"));
 
         const auto metadata = client.eqs.GetMessageMetadata("m-1");

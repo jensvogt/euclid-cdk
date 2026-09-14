@@ -176,12 +176,52 @@ namespace Euclid::CDK::EAM {
         std::ignore = Call("delete-namespace", {{"accountId", accountId}, {"name", name}});
     }
 
-    void Session::GrantNamespaceAccess(const std::string &user, const std::string &accountId, const std::string &nameSpace) const {
-        std::ignore = Call("grant-namespace-access", {{"user", user}, {"accountId", accountId}, {"namespace", nameSpace}});
+    // -- roles and grants -----------------------------------------------------------------------
+
+    Grant Session::GrantRole(const std::string &role, const std::string &principal, const GrantOptions &options) const {
+
+        const boost::json::object payload{
+                {"role", role},
+                {"principal", principal},
+                {"accountId", options.accountId},
+                {"namespaces", boost::json::value_from(options.namespaces)},
+                {"resources", boost::json::value_from(options.resources)},
+        };
+        return ToGrant(Json::Child(Call("grant-role", payload), "grant"));
     }
 
-    void Session::RevokeNamespaceAccess(const std::string &user, const std::string &accountId, const std::string &nameSpace) const {
-        std::ignore = Call("revoke-namespace-access", {{"user", user}, {"accountId", accountId}, {"namespace", nameSpace}});
+    void Session::RevokeRole(const std::string &grantId) const {
+        std::ignore = Call("revoke-role", {{"grantId", grantId}});
+    }
+
+    Page<Grant> Session::ListGrants(const ListGrantsOptions &options) const {
+        const boost::json::object payload{
+                {"principal", options.principal},
+                {"role", options.role},
+                {"accountId", options.accountId},
+        };
+        return ToPage<Grant>(Call("list-grants", payload), "grants", ToGrant);
+    }
+
+    PermissionCheck Session::CheckPermission(const std::string &userId, const std::string &target, const std::string &action,
+                                             const std::string &nameSpace, const std::string &resourceErn) const {
+
+        const boost::json::object payload{
+                {"userId", userId},
+                {"target", target},
+                {"action", action},
+                {"namespace", nameSpace},
+                {"resourceErn", resourceErn},
+        };
+        const auto answer = Call("check-permission", payload);
+
+        return {.allowed = Json::Flag(answer, "allowed"),
+                .reason = Json::Text(answer, "reason"),
+                .role = Json::Text(answer, "role")};
+    }
+
+    boost::json::object Session::ListPermissions() const {
+        return Call("list-permissions");
     }
 
     // -- monitoring -----------------------------------------------------------------------------

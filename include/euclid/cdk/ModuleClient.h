@@ -41,7 +41,7 @@ namespace Euclid::CDK {
      * the client, which it does in the way these are written - the client is built from a session
      * that is already there and used while it still is.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API ModuleClient {
     public:

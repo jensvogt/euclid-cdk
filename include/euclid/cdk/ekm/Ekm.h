@@ -146,7 +146,7 @@ namespace Euclid::CDK::EKM {
      * with HTTP 404, because its server never implemented the action. Call() reaches it if a later
      * euclid does.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Ekm final : public ModuleClient {
     public:

@@ -17,6 +17,7 @@
  */
 
 // C++ includes
+#include <map>
 #include <iostream>
 #include <string>
 
@@ -32,10 +33,15 @@ namespace {
         const auto [total, items] = session.ListUsers({.pageSize = 10});
         std::cout << "\nusers (" << total << " in total)\n";
 
+        // What a user may do is its own record now rather than a field on the user, so it is one
+        // request for the account rather than one per user.
+        std::map<std::string, std::vector<EAM::Grant>> byPrincipal;
+        for (const auto &grant: session.ListGrants().items) byPrincipal[grant.principal].push_back(grant);
+
         for (const auto &user: items) {
             std::cout << "  " << user.userId << "  " << user.email << "  " << user.ern << "\n";
-            for (const auto &grant: user.accountGrants) {
-                std::cout << "      grant on " << grant.accountId << (grant.isAdmin ? " (admin)" : "") << ", namespaces:";
+            for (const auto &grant: byPrincipal[user.ern]) {
+                std::cout << "      " << grant.role << " in " << grant.accountId << ", namespaces:";
                 for (const auto &nameSpace: grant.namespaces) std::cout << " " << nameSpace;
                 std::cout << "\n";
             }

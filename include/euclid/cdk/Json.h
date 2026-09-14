@@ -25,7 +25,7 @@ namespace Euclid::CDK {
      * caller an empty string, not an exception from inside a parse of something it was not even
      * looking at. What a caller genuinely cannot proceed without is checked by the caller.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Json {
     public:

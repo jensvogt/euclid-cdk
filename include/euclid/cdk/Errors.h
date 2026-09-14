@@ -19,7 +19,7 @@ namespace Euclid::CDK {
      * {"error": "..."} (Core::HttpActionServer::ErrorResponse) - so the message a caller sees is
      * pulled out of that body when it is there, and falls back to the body verbatim when it is not.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API EuclidError : public std::runtime_error {
     public:
@@ -35,7 +35,7 @@ namespace Euclid::CDK {
      * something about: the password is wrong, the account is disabled, or the user is a technical
      * user the server refuses to log in interactively.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API AuthenticationError final : public EuclidError {
     public:
@@ -74,7 +74,7 @@ namespace Euclid::CDK {
      * Carries the target and the action alongside the status, so a caller catching one of these
      * knows which call failed without having had to wrap each one individually.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API ServiceError final : public EuclidError {
     public:

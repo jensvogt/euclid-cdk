@@ -183,8 +183,33 @@ BOOST_AUTO_TEST_SUITE(EsmBucketTest)
 
         BOOST_TEST(client.esm.GetBucketErn("reports") == "ern:bucket/reports");
         BOOST_TEST(client.esm.GetBucketSize(kBucket) == 4096L);
-        BOOST_TEST(client.esm.GetObjectCount(kBucket, "2026/") == 7L);
+        BOOST_TEST(client.esm.GetObjectCount(kBucket) == 7L);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "get-object-count");
+    }
+
+    // The two counts are different questions: get-object-count reads the bucket's stored running
+    // total, count-objects runs a query. They were one call until euclid 1.0.73, which took a
+    // prefix and ignored it - so a caller asking about part of a bucket was quietly given the
+    // whole bucket's figure.
+    BOOST_AUTO_TEST_CASE(CountsForRealAndSaysWhatItCounted) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:bucket/reports", "prefix": "2026/",
+                                                   "includeDirectories": true, "count": 7})"));
+
+        BOOST_TEST(client.esm.CountObjects(kBucket, "2026/", true) == 7L);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "count-objects");
         BOOST_TEST(lastBody(client.gateway).at("prefix").as_string() == "2026/");
+        BOOST_TEST(lastBody(client.gateway).at("includeDirectories").as_bool());
+    }
+
+    BOOST_AUTO_TEST_CASE(CountsTheWholeBucketWithoutDirectoriesByDefault) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:bucket/reports", "count": 3})"));
+
+        BOOST_TEST(client.esm.CountObjects(kBucket) == 3L);
+
+        // Both defaults go on the wire rather than being left out: the server reads them the same
+        // either way, but a request that says what it means is one a packet capture explains.
+        BOOST_TEST(lastBody(client.gateway).at("prefix").as_string() == "");
+        BOOST_TEST(!lastBody(client.gateway).at("includeDirectories").as_bool());
     }
 
     BOOST_AUTO_TEST_CASE(TagsRenamesPurgesAndFlagsABucket) {

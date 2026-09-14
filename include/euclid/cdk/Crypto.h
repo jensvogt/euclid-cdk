@@ -20,7 +20,7 @@ namespace Euclid::CDK {
      * so that this SDK depends on OpenSSL and nothing else of the server. The names and the
      * behaviour are the server's, which is what makes a signature made here verify there.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Crypto {
     public:

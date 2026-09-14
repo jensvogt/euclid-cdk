@@ -29,7 +29,7 @@ namespace Euclid::CDK {
      * cached by the CLI is not reused here and a fresh login happens instead. That is the safe
      * direction to be wrong in: the alternative would be presenting one server's token to another.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Credentials {
     public:

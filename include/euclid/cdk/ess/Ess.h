@@ -89,7 +89,7 @@ namespace Euclid::CDK::ESS {
      * Built from a session that has already logged in, and holding it rather than a copy of what it
      * knew at the time. The session has to outlive the client.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Ess final : public ModuleClient {
     public:

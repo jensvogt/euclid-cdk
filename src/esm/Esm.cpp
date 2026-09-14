@@ -231,8 +231,14 @@ namespace Euclid::CDK::ESM {
         return ToPage<Object>(Call("list-objects", payload), "objects", ToObject);
     }
 
-    long Esm::GetObjectCount(const std::string &bucketErn, const std::string &prefix) const {
-        return NumberOf("get-object-count", {{"ern", bucketErn}, {"prefix", prefix}}, "count");
+    long Esm::GetObjectCount(const std::string &bucketErn) const {
+        return NumberOf("get-object-count", {{"ern", bucketErn}}, "count");
+    }
+
+    long Esm::CountObjects(const std::string &bucketErn, const std::string &prefix, const bool includeDirectories) const {
+        return NumberOf("count-objects",
+                        {{"ern", bucketErn}, {"prefix", prefix}, {"includeDirectories", includeDirectories}},
+                        "count");
     }
 
     void Esm::DeleteObject(const std::string &ern) const {

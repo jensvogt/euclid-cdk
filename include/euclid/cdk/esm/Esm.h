@@ -176,7 +176,7 @@ namespace Euclid::CDK::ESM {
      * session - ChangeNamespace(), SetScheme() - while a transfer is running changes it underneath
      * the parts still in flight. Anything else here is one request at a time, like the session.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Esm final : public ModuleClient {
     public:
@@ -352,14 +352,44 @@ namespace Euclid::CDK::ESM {
         Page<Object> ListObjects(const std::string &bucketErn, const ListOptions &options = {}, bool includeDirectories = false) const;
 
         /**
-         * @brief How many objects a bucket holds.
+         * @brief The bucket's stored object count, without counting.
          *
          * @par
-         * Cheaper than listing them when only the number matters - the server counts rather than
-         * paging every object back to the caller.
+         * That figure is a running total, moved as objects are written and removed rather than
+         * counted on demand, so this costs one document read whatever the bucket holds. It is
+         * always the whole bucket, and only as current as the last time euclid's monitoring module
+         * recomputed it. Use CountObjects() when the answer has to be exact, or has to be about
+         * part of a bucket.
+         *
+         * @par
+         * This took a prefix until euclid 1.0.73 and the server ignored it, answering the whole
+         * bucket's figure regardless. The parameter is gone rather than fixed, because the stored
+         * total is a property of the bucket and there is no per-prefix one to read.
          */
         [[nodiscard]]
-        long GetObjectCount(const std::string &bucketErn, const std::string &prefix = {}) const;
+        long GetObjectCount(const std::string &bucketErn) const;
+
+        /**
+         * @brief Counts a bucket's objects, exactly, optionally under a prefix.
+         *
+         * @par
+         * This runs a query, so the figure is right at the moment of asking and costs what counting
+         * a bucket's objects costs - on a bucket of a million, not nothing. GetObjectCount() reads
+         * the stored running total instead. Ask this one when the answer has to be right or has to
+         * be about part of a bucket, and that one when it has to be cheap or is being polled.
+         *
+         * @param bucketErn          the bucket to count in.
+         * @param prefix             only objects whose key starts with this; matched literally
+         *                           rather than as a glob, since a bucket has "directories" only in
+         *                           the sense that keys share a prefix. Empty counts the whole
+         *                           bucket.
+         * @param includeDirectories count the zero-byte markers that stand for directories too,
+         *                           which a listing and the bucket's own stored figure both leave
+         *                           out.
+         */
+        [[nodiscard]]
+        long CountObjects(const std::string &bucketErn, const std::string &prefix = {},
+                          bool includeDirectories = false) const;
 
         /**
          * @brief Deletes one object, by its own ERN.

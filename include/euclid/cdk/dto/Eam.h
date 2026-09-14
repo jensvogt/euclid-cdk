@@ -52,13 +52,27 @@ namespace Euclid::CDK::EAM {
     };
 
     /**
-     * @brief What a user may reach in one account: which namespaces, and whether they administer it.
+     * @brief One role, given to one principal, somewhere.
+     *
+     * @par
+     * The only thing that grants anything, and the only thing that carries scope. Replaced the
+     * per-user accountGrants/resourceGrants lists: what a user may do is the union of the grants
+     * held by them and by every group they belong to.
+     *
+     * @par
+     * "grantId" is what Session::RevokeRole() takes - not the (role, principal) pair, since the
+     * same role may be granted to the same principal twice with different scope, and revoking has
+     * to say which.
      */
-    struct EUCLID_CDK_API AccountGrant {
+    struct EUCLID_CDK_API Grant {
+        std::string grantId;
+        std::string role;
+        std::string principal;
         std::string accountId;
         std::vector<std::string> namespaces;
-        bool isAdmin{false};
+        std::vector<std::string> resources;
         std::string granted;
+        std::string grantedBy;
     };
 
     /**
@@ -71,7 +85,6 @@ namespace Euclid::CDK::EAM {
         std::string email;
         std::string accountId;
         std::string region;
-        std::vector<AccountGrant> accountGrants;
         std::string created;
         std::string modified;
     };
@@ -155,10 +168,10 @@ namespace Euclid::CDK::EAM {
     EUCLID_CDK_API AccessKey ToAccessKey(const boost::json::value &value);
 
     /**
-     * @brief Reads an account grant.
+     * @brief Reads a grant.
      */
     [[nodiscard]]
-    EUCLID_CDK_API AccountGrant ToAccountGrant(const boost::json::value &value);
+    EUCLID_CDK_API Grant ToGrant(const boost::json::value &value);
 
     /**
      * @brief Reads a user.

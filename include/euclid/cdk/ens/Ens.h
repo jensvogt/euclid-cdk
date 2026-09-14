@@ -141,7 +141,7 @@ namespace Euclid::CDK::ENS {
      * Built from a session that has already logged in, and holding it rather than a copy of what it
      * knew at the time. The session has to outlive the client.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Ens final : public ModuleClient {
     public:
@@ -228,6 +228,37 @@ namespace Euclid::CDK::ENS {
          */
         [[nodiscard]]
         TopicStateResult StartTopic(const std::string &ern) const;
+
+        /**
+         * @brief Hands what a topic still holds to its subscribers again, oldest first.
+         *
+         * @par
+         * A topic is not consumed the way a queue is: publishing fans a message out there and then,
+         * and what stays behind is the record of what was published - kept for the topic's
+         * retention period, and once a subscriber has consumed the queue message it received, that
+         * record is the only copy left. This is the way back to it for a subscriber that was down,
+         * one subscribed after the fact, or one that acknowledged a message and then failed to
+         * process it.
+         *
+         * @par It goes to every subscriber
+         * Not only the one that missed something. A consumer that is idempotent does not care; one
+         * that is not will double-process. On a busy topic, name a single message rather than
+         * replaying a fortnight of traffic to everybody.
+         *
+         * @par
+         * Messages held because the topic was stopped are not resent - they have never been
+         * delivered at all, and StartTopic() is what releases them and marks them delivered. They
+         * are counted in the result's "held" instead. A stopped topic is refused outright, for the
+         * same reason: it delivers nothing by somebody's decision, and this would be the way around
+         * that.
+         *
+         * @param ern the topic.
+         * @param messageId resend only this message, as ListMessages() reports its id; empty resends
+         * everything the topic holds. One belonging to another topic is refused rather than fanned
+         * out to subscriptions it was never published to.
+         */
+        [[nodiscard]]
+        ResendResult ResendMessages(const std::string &ern, const std::string &messageId = {}) const;
 
         /**
          * @brief Sets how long a message published to this topic is kept, in seconds.

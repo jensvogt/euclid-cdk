@@ -55,6 +55,51 @@ namespace Euclid::CDK::EAM {
     using CDK::ListOptions;
 
     /**
+     * @brief How a role is scoped when it is granted. Everything, everywhere, by default.
+     */
+    struct EUCLID_CDK_API GrantOptions {
+
+        /**
+         * @brief Namespaces of the account it applies in; a single "*" means every one of them.
+         */
+        std::vector<std::string> namespaces{"*"};
+
+        /**
+         * @brief ERN patterns it applies to, each exact or ending in "*"; a single "*" means every
+         * resource.
+         */
+        std::vector<std::string> resources{"*"};
+
+        /**
+         * @brief The account to grant in; the caller's own when empty. Naming another needs
+         * administrator rights on it.
+         */
+        std::string accountId;
+    };
+
+    /**
+     * @brief Which grants to list. Naming none asks for everything granted in the account.
+     */
+    struct EUCLID_CDK_API ListGrantsOptions {
+        std::string principal;
+        std::string role;
+        std::string accountId;
+    };
+
+    /**
+     * @brief What CheckPermission() answers: the verdict, and what decided it.
+     */
+    struct EUCLID_CDK_API PermissionCheck {
+        bool allowed{false};
+        std::string reason;
+
+        /**
+         * @brief The role whose grant allowed it, when one did. Empty on a refusal.
+         */
+        std::string role;
+    };
+
+    /**
      * @brief The optional half of Register().
      */
     struct EUCLID_CDK_API RegisterOptions {
@@ -138,7 +183,7 @@ namespace Euclid::CDK::EAM {
      * Not thread-safe. A session owns one connection and sends one request at a time; concurrent
      * callers want a session each.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Session {
     public:
@@ -433,23 +478,79 @@ namespace Euclid::CDK::EAM {
          */
         void DeleteNamespace(const std::string &accountId, const std::string &name) const;
 
-        /**
-         * @brief Grants a user access to a namespace. Requires admin rights on the account.
-         *
-         * @param user      the user's ERN.
-         * @param accountId the owning account.
-         * @param nameSpace the namespace's name.
-         */
-        void GrantNamespaceAccess(const std::string &user, const std::string &accountId, const std::string &nameSpace) const;
+        // -- roles and grants -------------------------------------------------------------------
 
         /**
-         * @brief Revokes a user's access to a namespace. Requires admin rights on the account.
+         * @brief Gives a role to a user or a user group, scoped.
          *
-         * @param user      the user's ERN.
-         * @param accountId the owning account.
-         * @param nameSpace the namespace's name.
+         * @par
+         * Replaced GrantNamespaceAccess(): access to a namespace is now a role granted in it, so
+         * the same call says *what* the principal may do there as well as *where*.
+         *
+         * @param role      a role of the account, or a built-in one - "account-administrator",
+         * "operator", "reader", "publisher", "consumer", "application".
+         * @param principal a user ERN or a user-group ERN. One argument for both, because the ERN
+         * says which.
+         * @param options   how it is scoped; everything, everywhere, in this account by default.
+         * @return the grant, whose grantId is what RevokeRole() takes.
          */
-        void RevokeNamespaceAccess(const std::string &user, const std::string &accountId, const std::string &nameSpace) const;
+        [[nodiscard]]
+        Grant GrantRole(const std::string &role, const std::string &principal, const GrantOptions &options = {}) const;
+
+        /**
+         * @brief Removes one grant, by its own id.
+         *
+         * @par
+         * Not by role and principal: the same role may be granted to the same principal twice with
+         * different scope, and revoking has to say which. ListGrants() shows the ids.
+         *
+         * @param grantId the grant's own id.
+         */
+        void RevokeRole(const std::string &grantId) const;
+
+        /**
+         * @brief Lists grants: by principal, by role, or - naming neither - a whole account.
+         *
+         * @par
+         * The two questions this model exists to answer are "what may they do" and "who can do
+         * this"; naming neither answers a third, "what is granted here at all", which is what an
+         * overview wants and what one request per user would otherwise cost.
+         *
+         * @par
+         * Note that a principal's grants are its *own* and not those of the groups it belongs to,
+         * which is a different question - CheckPermission() answers the combined one.
+         *
+         * @param options which grants to list.
+         */
+        [[nodiscard]]
+        Page<Grant> ListGrants(const ListGrantsOptions &options = {}) const;
+
+        /**
+         * @brief Asks whether a user would be allowed to do something, and says why.
+         *
+         * @par
+         * Counts the grants of every group the user belongs to, the way a real request would.
+         *
+         * @param userId      the user to ask about.
+         * @param target      module, e.g. "ens".
+         * @param action      action, e.g. "publish-message".
+         * @param nameSpace   namespace to ask about; empty is the account root.
+         * @param resourceErn the resource, for the actions that name one.
+         */
+        [[nodiscard]]
+        PermissionCheck CheckPermission(const std::string &userId, const std::string &target, const std::string &action,
+                                        const std::string &nameSpace = {}, const std::string &resourceErn = {}) const;
+
+        /**
+         * @brief Every permission a role can hold, as "<module>:<action>".
+         *
+         * @par
+         * Generated from what the modules actually dispatch, so it is exactly what can be granted -
+         * and the two modules that are never grantable, "emd" and "emm", are named separately
+         * rather than silently missing.
+         */
+        [[nodiscard]]
+        boost::json::object ListPermissions() const;
 
         // -- monitoring -------------------------------------------------------------------------
 

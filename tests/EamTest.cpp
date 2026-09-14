@@ -39,11 +39,6 @@ namespace {
                                           {"email", "jens@example.com"},
                                           {"accountId", "000000000000"},
                                           {"region", "eu-central-1"},
-                                          {"accountGrants", boost::json::array{boost::json::object{
-                                                                    {"accountId", "000000000000"},
-                                                                    {"namespaces", boost::json::array{"reports", "archive"}},
-                                                                    {"isAdmin", true},
-                                                                    {"granted", "2026-09-01T08:00:00Z"}}}},
                                           {"created", "2026-09-01T08:00:00Z"},
                                           {"modified", "2026-09-01T08:00:00Z"}},
                                   boost::json::object{{"userId", "jill"}, {"email", "jill@example.com"}}}},
@@ -147,9 +142,6 @@ BOOST_AUTO_TEST_SUITE(EamSessionTest)
         BOOST_REQUIRE(page.items.size() == 2U);
         BOOST_TEST(page.items[0].userId == "jens");
         BOOST_TEST(page.items[0].email == "jens@example.com");
-        BOOST_REQUIRE(page.items[0].accountGrants.size() == 1U);
-        BOOST_TEST(page.items[0].accountGrants[0].isAdmin);
-        BOOST_TEST(page.items[0].accountGrants[0].namespaces.size() == 2U);
         BOOST_TEST(page.items[1].userId == "jill");
 
         const auto request = gateway.LastRequest();
@@ -388,6 +380,69 @@ BOOST_AUTO_TEST_SUITE(EamCacheTest)
 
         std::ignore = builder(gateway).Login();
         BOOST_TEST(gateway.Received().size() == 2U);
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(EamRoleTest)
+
+    // What a user may do used to arrive on the user, as an accountGrants array. It is its own
+    // record now, so the SDK asks for it separately - and the call that grants one says what the
+    // principal may do as well as where, which GrantNamespaceAccess never did.
+
+    BOOST_AUTO_TEST_CASE(GrantingAnswersWithTheIdThatRevokesIt) {
+        const FakeGateway gateway(gatewayHandler(R"({"grant": {"grantId": "g-1", "role": "operator",
+                                                               "principal": "ern:...:user/jens",
+                                                               "namespaces": ["production"]}})"));
+        const auto session = builder(gateway).Login();
+
+        const auto grant = session.GrantRole("operator", "ern:...:user/jens", {.namespaces = {"production"}});
+
+        BOOST_TEST(grant.grantId == "g-1");
+        BOOST_TEST(grant.role == "operator");
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("role").as_string() == "operator");
+        BOOST_TEST(body.at("namespaces").as_array().size() == 1U);
+        BOOST_TEST(body.at("resources").as_array().at(0).as_string() == "*");
+    }
+
+    BOOST_AUTO_TEST_CASE(RevokingTakesTheGrantsOwnId) {
+        const FakeGateway gateway(gatewayHandler("{}"));
+        const auto session = builder(gateway).Login();
+
+        session.RevokeRole("g-1");
+
+        BOOST_TEST(boost::json::parse(gateway.LastRequest().body()).at("grantId").as_string() == "g-1");
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "revoke-role");
+    }
+
+    // The third question - what is granted here at all - which one request per user would
+    // otherwise cost.
+    BOOST_AUTO_TEST_CASE(ListingWithNoOptionsAsksForTheWholeAccount) {
+        const FakeGateway gateway(gatewayHandler(R"({"total": 1, "grants": [{"grantId": "g-1",
+                                                     "role": "operator", "namespaces": ["production"]}]})"));
+        const auto session = builder(gateway).Login();
+
+        const auto page = session.ListGrants();
+
+        BOOST_TEST(page.total == 1L);
+        BOOST_REQUIRE(page.items.size() == 1U);
+        BOOST_TEST(page.items[0].role == "operator");
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("principal").as_string() == "");
+        BOOST_TEST(body.at("role").as_string() == "");
+    }
+
+    BOOST_AUTO_TEST_CASE(CheckPermissionSaysWhy) {
+        const FakeGateway gateway(gatewayHandler(R"({"allowed": false,
+                                                     "reason": "no role granted here holds 'ens:publish-message'",
+                                                     "role": ""})"));
+        const auto session = builder(gateway).Login();
+
+        const auto answer = session.CheckPermission("order-service", "ens", "publish-message", "production");
+
+        BOOST_TEST(!answer.allowed);
+        BOOST_TEST(answer.reason.find("ens:publish-message") != std::string::npos);
     }
 
 BOOST_AUTO_TEST_SUITE_END()

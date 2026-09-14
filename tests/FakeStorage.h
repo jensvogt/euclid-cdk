@@ -29,7 +29,7 @@ namespace Euclid::CDK::Test {
      * Its handlers run under one lock, because a transfer sends its parts at once and a test that
      * failed on this class's own maps would say nothing about the client.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class FakeStorage {
     public:

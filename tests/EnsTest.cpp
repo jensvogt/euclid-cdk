@@ -186,6 +186,35 @@ BOOST_AUTO_TEST_SUITE(EnsTopicStateTest)
         BOOST_TEST(started.released == 0L);
     }
 
+    BOOST_AUTO_TEST_CASE(HandsWhatTheTopicStillHoldsToItsSubscribersAgain) {
+        // The way back to what a topic keeps for its retention period: the fan-out happened once,
+        // and the queue message the subscriber received is long consumed.
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/order-events", "resent": 42, "held": 0})"));
+
+        const auto result = client.ens.ResendMessages(kTopic);
+        BOOST_TEST(result.ern == "ern:topic/order-events");
+        BOOST_TEST(result.resent == 42L);
+        BOOST_TEST(result.held == 0L);
+    }
+
+    BOOST_AUTO_TEST_CASE(ResendsOneMessageWhichIsWhatABusyTopicWants) {
+        // A resend goes to every subscriber, so replaying one message is usually the right size of
+        // blast radius.
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/order-events", "resent": 1, "held": 0})"));
+
+        BOOST_TEST(client.ens.ResendMessages(kTopic, "m-7").resent == 1L);
+        BOOST_TEST(lastBody(client.gateway).at("messageId").as_string() == "m-7");
+    }
+
+    BOOST_AUTO_TEST_CASE(ReportsWhatAResendPassedOverAsHeld) {
+        // Held messages have never been delivered at all - StartTopic() releases those, not this.
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/order-events", "resent": 0, "held": 12})"));
+
+        const auto result = client.ens.ResendMessages(kTopic);
+        BOOST_TEST(result.resent == 0L);
+        BOOST_TEST(result.held == 12L);
+    }
+
     BOOST_AUTO_TEST_CASE(CarriesTheServersReasonForATopicThatIsNotThere) {
         const FakeGateway gateway(Test::Authenticated([](const Request &) {
             return FakeGateway::Json(404, R"({"error": "Topic not found, ern: ern:topic/nope"})");

@@ -42,7 +42,7 @@ namespace Euclid::CDK::COM {
      * @brief What a message is delivered at, and the only three values euclid accepts.
      */
     inline constexpr std::string_view PriorityLow = "LOW";
-    inline constexpr std::string_view PriorityMiddle = "MIDDLE";
+    inline constexpr std::string_view PriorityMedium = "MEDIUM";
     inline constexpr std::string_view PriorityHigh = "HIGH";
 
     /**
@@ -78,7 +78,7 @@ namespace Euclid::CDK::COM {
      * @par
      * "binary" travels as base64 and is held here as bytes, so a caller never sees the encoding.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     struct EUCLID_CDK_API Variant {
 

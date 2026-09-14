@@ -35,7 +35,7 @@ namespace Euclid::CDK {
      * two canonicalizations are one canonicalization, and because a C++ service fronting euclid
      * has to check the signatures it receives with the rules the server applies.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API SigV4 {
     public:

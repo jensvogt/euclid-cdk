@@ -23,12 +23,16 @@ namespace Euclid::CDK::EAM {
         };
     }
 
-    AccountGrant ToAccountGrant(const boost::json::value &value) {
+    Grant ToGrant(const boost::json::value &value) {
         return {
+                .grantId = Json::Text(value, "grantId"),
+                .role = Json::Text(value, "role"),
+                .principal = Json::Text(value, "principal"),
                 .accountId = Json::Text(value, "accountId"),
                 .namespaces = Json::Strings(value, "namespaces"),
-                .isAdmin = Json::Flag(value, "isAdmin"),
+                .resources = Json::Strings(value, "resources"),
                 .granted = Json::Text(value, "granted"),
+                .grantedBy = Json::Text(value, "grantedBy"),
         };
     }
 
@@ -40,13 +44,9 @@ namespace Euclid::CDK::EAM {
                 .email = Json::Text(value, "email"),
                 .accountId = Json::Text(value, "accountId"),
                 .region = Json::Text(value, "region"),
-                .accountGrants = {},
                 .created = Json::Text(value, "created"),
                 .modified = Json::Text(value, "modified"),
         };
-        for (const auto &grant: Json::Documents(value, "accountGrants")) {
-            user.accountGrants.push_back(ToAccountGrant(grant));
-        }
         return user;
     }
 

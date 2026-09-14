@@ -27,7 +27,7 @@ namespace Euclid::CDK::EAM {
      * not authenticated yet, and a session that also carried the login options would have a
      * namespace field that means one thing before login and another after.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Eam {
     public:

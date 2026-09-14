@@ -24,7 +24,7 @@ namespace Euclid::CDK {
      * not JSON at all - a gateway's error page, say - and because the error types want to quote it
      * verbatim.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     struct EUCLID_CDK_API HttpResponse {
 
@@ -92,7 +92,7 @@ namespace Euclid::CDK {
      * Boost.Beast's asynchronous operations even though the call blocks, because the synchronous
      * overloads silently ignore expires_after() and can block forever.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API HttpClient {
     public:

@@ -45,7 +45,7 @@ namespace Euclid::CDK {
      * server compares the Host header it received against the one the signature covers, so
      * "https://host:443" has to keep the port it was written with.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Url {
     public:

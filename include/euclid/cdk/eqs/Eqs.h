@@ -236,7 +236,7 @@ namespace Euclid::CDK::EQS {
      * "get-metadata" and "add-metadata" - the server's older names for reading and writing a queue's
      * attributes - are not wrapped here, as in euclid-pdk and euclid-ndk; Call() reaches them.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class EUCLID_CDK_API Eqs final : public ModuleClient {
     public:

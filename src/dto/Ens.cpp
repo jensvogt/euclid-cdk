@@ -73,6 +73,14 @@ namespace Euclid::CDK::ENS {
         };
     }
 
+    ResendResult ToResendResult(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                .resent = Json::Number(value, "resent"),
+                .held = Json::Number(value, "held"),
+        };
+    }
+
     TopicRetentionResult ToTopicRetentionResult(const boost::json::value &value) {
         return {.ern = Json::Text(value, "ern"), .retentionPeriod = Json::Number(value, "retentionPeriod")};
     }

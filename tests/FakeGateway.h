@@ -31,7 +31,7 @@ namespace Euclid::CDK::Test {
      * Plain HTTP, one connection at a time, one request per connection - which is exactly what the
      * client does, and keeps the whole thing to one accept loop on one thread.
      *
-     * @author jens.vogt\@opitz-consulting.com
+     * @author jensvogt47\@gmail.com
      */
     class FakeGateway {
     public:

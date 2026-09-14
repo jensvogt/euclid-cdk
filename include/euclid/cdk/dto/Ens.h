@@ -146,6 +146,29 @@ namespace Euclid::CDK::ENS {
     };
 
     /**
+     * @brief What a resend handed over, and what it passed by.
+     *
+     * @par
+     * "held" is the number that says a resend was not the right command: those messages were
+     * published while the topic was stopped and have never been delivered at all, so StartTopic()
+     * is what releases them. A resend leaves them alone, because delivering one from here would
+     * hand it over without marking it delivered and the next start would deliver it a second time.
+     */
+    struct EUCLID_CDK_API ResendResult {
+        std::string ern;
+
+        /**
+         * @brief How many messages went to the topic's subscriptions again.
+         */
+        long resent{};
+
+        /**
+         * @brief How many were passed over as never having been delivered.
+         */
+        long held{};
+    };
+
+    /**
      * @brief A topic's retention period after setting it, in seconds. Zero means the installation's
      * own; -1 means the topic keeps everything published to it.
      */
@@ -203,6 +226,11 @@ namespace Euclid::CDK::ENS {
      */
     [[nodiscard]]
     EUCLID_CDK_API TopicStateResult ToTopicStateResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads a resend-messages response.
+     */
+    EUCLID_CDK_API ResendResult ToResendResult(const boost::json::value &value);
 
     /**
      * @brief Reads a set-topic-retention response.
