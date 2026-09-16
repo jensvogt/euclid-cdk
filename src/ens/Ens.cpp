@@ -42,8 +42,8 @@ namespace Euclid::CDK::ENS {
         return SetTopicState("start-topic", ern);
     }
 
-    ResendResult Ens::ResendMessages(const std::string &ern, const std::string &messageId) const {
-        return ToResendResult(Call("resend-messages", {{"ern", ern}, {"messageId", messageId}}));
+    ResendResult Ens::ResendMessages(const std::string &ern, const std::string &messageId, const bool background) const {
+        return ToResendResult(Call("resend-messages", {{"ern", ern}, {"messageId", messageId}, {"async", background}}));
     }
 
     TopicStateResult Ens::SetTopicState(const std::string &action, const std::string &ern) const {

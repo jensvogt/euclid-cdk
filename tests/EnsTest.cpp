@@ -206,6 +206,22 @@ BOOST_AUTO_TEST_SUITE(EnsTopicStateTest)
         BOOST_TEST(lastBody(client.gateway).at("messageId").as_string() == "m-7");
     }
 
+    BOOST_AUTO_TEST_CASE(ResendsAWholeTopicInTheBackground) {
+        // A fortnight of traffic outlasts the request, so the server counts what it is about to
+        // hand over and answers at once.
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/order-events", "async": true, "messages": 8400})"));
+
+        const auto result = client.ens.ResendMessages(kTopic, "", true);
+        BOOST_TEST(result.messages == 8400L);
+        BOOST_TEST(result.background);
+
+        // Nothing had happened yet when this was answered, so both counts are zero rather than
+        // some partial figure a caller might take for a total.
+        BOOST_TEST(result.resent == 0L);
+        BOOST_TEST(result.held == 0L);
+        BOOST_TEST(lastBody(client.gateway).at("async").as_bool() == true);
+    }
+
     BOOST_AUTO_TEST_CASE(ReportsWhatAResendPassedOverAsHeld) {
         // Held messages have never been delivered at all - StartTopic() releases those, not this.
         const EnsClient client(Test::Answering(R"({"ern": "ern:topic/order-events", "resent": 0, "held": 12})"));

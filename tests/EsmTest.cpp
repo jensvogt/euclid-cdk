@@ -230,6 +230,7 @@ BOOST_AUTO_TEST_SUITE(EsmBucketTest)
         const auto purged = client.esm.PurgeBucket(kBucket, "2025/");
         BOOST_TEST(purged.count == 12L);
         BOOST_TEST(lastBody(client.gateway).at("prefix").as_string() == "2025/");
+        BOOST_TEST(lastBody(client.gateway).at("async").as_bool() == false);
 
         client.esm.AddBucketTag(kBucket, "team", "finance");
         BOOST_TEST(lastBody(client.gateway).at("value").as_string() == "finance");
@@ -734,6 +735,36 @@ BOOST_AUTO_TEST_SUITE_END()
 BOOST_AUTO_TEST_SUITE(EsmCallTest)
 
     // Reaching an action this SDK does not wrap should not need a release.
+    BOOST_AUTO_TEST_CASE(DeletesABucketInTheBackground) {
+        // A bucket goes with its objects, and a large one is emptied in the background first - the
+        // bucket itself going only when that finishes.
+        const EsmClient client(Test::Answering(
+                R"({"ern": "ern:bucket/reports", "async": true, "jobId": "job-7", "objects": 40000})"));
+
+        const auto deleted = client.esm.DeleteBucket(kBucket, true);
+        BOOST_TEST(deleted.count == 40000L);
+        BOOST_TEST(deleted.background);
+        BOOST_TEST(deleted.jobId == "job-7");
+        BOOST_TEST(lastBody(client.gateway).at("async").as_bool() == true);
+    }
+
+    BOOST_AUTO_TEST_CASE(PurgesABucketInTheBackground) {
+        // Emptying a bucket can take minutes, so the server writes the work down as a job and
+        // answers at once. The job is what makes the instance being stopped a pause: another picks
+        // it up and carries on.
+        const EsmClient client(Test::Answering(
+                R"({"ern": "ern:bucket/reports", "async": true, "jobId": "job-42", "objects": 120000})"));
+
+        const auto purged = client.esm.PurgeBucket(kBucket, "", true);
+
+        // "objects" here, "count" when it runs inline: the same figure at two points in the same
+        // work, and count reads it either way.
+        BOOST_TEST(purged.count == 120000L);
+        BOOST_TEST(purged.background);
+        BOOST_TEST(purged.jobId == "job-42");
+        BOOST_TEST(lastBody(client.gateway).at("async").as_bool() == true);
+    }
+
     BOOST_AUTO_TEST_CASE(CallReachesAnyEsmAction) {
         const EsmClient client(Test::Answering(R"({"whatever": 42})"));
 

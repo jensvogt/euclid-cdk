@@ -78,6 +78,8 @@ namespace Euclid::CDK::ENS {
                 .ern = Json::Text(value, "ern"),
                 .resent = Json::Number(value, "resent"),
                 .held = Json::Number(value, "held"),
+                .messages = Json::Number(value, "messages"),
+                .background = Json::Flag(value, "async"),
         };
     }
 

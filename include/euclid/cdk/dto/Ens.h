@@ -153,6 +153,11 @@ namespace Euclid::CDK::ENS {
      * published while the topic was stopped and have never been delivered at all, so StartTopic()
      * is what releases them. A resend leaves them alone, because delivering one from here would
      * hand it over without marking it delivered and the next start would deliver it a second time.
+     *
+     * @par
+     * "background" says the server answered before handing over any of them, in which case
+     * "messages" is how many the topic held when the resend started and both counts are zero. The
+     * module log carries the finished figures.
      */
     struct EUCLID_CDK_API ResendResult {
         std::string ern;
@@ -166,6 +171,16 @@ namespace Euclid::CDK::ENS {
          * @brief How many were passed over as never having been delivered.
          */
         long held{};
+
+        /**
+         * @brief How many the topic held when a background resend started, zero otherwise.
+         */
+        long messages{};
+
+        /**
+         * @brief Whether the server is still handing them over.
+         */
+        bool background{};
     };
 
     /**

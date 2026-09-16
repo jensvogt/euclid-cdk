@@ -143,11 +143,59 @@ namespace Euclid::CDK::ESM {
     };
 
     /**
+     * @brief What a background bucket deletion took on.
+     *
+     * @par
+     * Only a deletion asked to run in the background answers with anything at all - a bucket
+     * deleted inline is simply gone by the time the call returns. So "background" is true whenever
+     * this is worth reading, "count" is how many objects the bucket held when the work was taken
+     * on, and "jobId" names the job doing it, which outlives the instance that started it.
+     *
+     * @par
+     * The bucket itself goes when the emptying finishes, so it stays listed - and still deletable -
+     * until it is genuinely gone.
+     */
+    struct EUCLID_CDK_API DeleteBucketResult {
+        std::string ern;
+
+        /**
+         * @brief How many objects the bucket held when the deletion was taken on.
+         */
+        long count{};
+
+        /**
+         * @brief The background job doing the work.
+         */
+        std::string jobId;
+
+        /**
+         * @brief Whether the server is still working through it.
+         */
+        bool background{};
+    };
+
+    /**
      * @brief A purged bucket, and how many objects went.
+     *
+     * @par
+     * "background" says the server answered before doing any of it, in which case "count" is how
+     * many objects the bucket held when the purge was taken on rather than how many have gone, and
+     * "jobId" names the job doing it. That job outlives the instance that started it - one stopped
+     * by the autoscaler, or lost to a crash, leaves a job another instance picks up and carries on.
      */
     struct EUCLID_CDK_API PurgeBucketResult {
         std::string ern;
         long count{};
+
+        /**
+         * @brief The background job doing the work, empty unless "background".
+         */
+        std::string jobId;
+
+        /**
+         * @brief Whether the server is still working through the objects.
+         */
+        bool background{};
     };
 
     /**
@@ -293,6 +341,8 @@ namespace Euclid::CDK::ESM {
      * @brief Reads a purge-bucket response.
      */
     [[nodiscard]]
+    EUCLID_CDK_API DeleteBucketResult ToDeleteBucketResult(const boost::json::value &value);
+
     EUCLID_CDK_API PurgeBucketResult ToPurgeBucketResult(const boost::json::value &value);
 
     /**

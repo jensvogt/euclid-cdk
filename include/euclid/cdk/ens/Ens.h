@@ -256,9 +256,19 @@ namespace Euclid::CDK::ENS {
          * @param messageId resend only this message, as ListMessages() reports its id; empty resends
          * everything the topic holds. One belonging to another topic is refused rather than fanned
          * out to subscriptions it was never published to.
+         * @param background answer as soon as the server has counted what it is about to hand over,
+         * rather than when it has finished. What a topic with a long retention wants: resending a
+         * fortnight of traffic outlasts the request, and inline the caller waits for all of it, gets
+         * a timeout anyway, and the resending carries on invisibly behind the abandoned request.
+         * Nothing is resumed if the server stops partway and nothing needs to be - a resend removes
+         * nothing, so asking again hands over all of them, the ones already sent for a second time.
+         * That is the same replay this call always is. Cannot be combined with messageId: one
+         * delivery is not worth a status the caller then has to chase, and the server refuses the
+         * pair rather than quietly ignoring one of them.
          */
         [[nodiscard]]
-        ResendResult ResendMessages(const std::string &ern, const std::string &messageId = {}) const;
+        ResendResult ResendMessages(const std::string &ern, const std::string &messageId = {},
+                                    bool background = false) const;
 
         /**
          * @brief Sets how long a message published to this topic is kept, in seconds.

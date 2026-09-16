@@ -172,8 +172,8 @@ namespace Euclid::CDK::ESM {
         return ToCreateBucketResult(Call("create-bucket", {{"name", name}, {"internal", internal}}));
     }
 
-    void Esm::DeleteBucket(const std::string &ern) const {
-        std::ignore = Call("delete-bucket", {{"ern", ern}});
+    DeleteBucketResult Esm::DeleteBucket(const std::string &ern, const bool background) const {
+        return ToDeleteBucketResult(Call("delete-bucket", {{"ern", ern}, {"async", background}}));
     }
 
     Page<Bucket> Esm::ListBuckets(const ListOptions &options, const bool includeInternal) const {
@@ -198,8 +198,8 @@ namespace Euclid::CDK::ESM {
         return ToSetBucketInternalResult(Call("set-bucket-internal", {{"ern", ern}, {"internal", internal}}));
     }
 
-    PurgeBucketResult Esm::PurgeBucket(const std::string &ern, const std::string &prefix) const {
-        return ToPurgeBucketResult(Call("purge-bucket", {{"ern", ern}, {"prefix", prefix}}));
+    PurgeBucketResult Esm::PurgeBucket(const std::string &ern, const std::string &prefix, const bool background) const {
+        return ToPurgeBucketResult(Call("purge-bucket", {{"ern", ern}, {"prefix", prefix}, {"async", background}}));
     }
 
     EnableEncryptionResult Esm::EnableEncryption(const std::string &bucketErn, const std::string &keyId) const {

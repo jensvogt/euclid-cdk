@@ -236,9 +236,32 @@ namespace Euclid::CDK::ESM {
         CreateBucketResult CreateBucket(const std::string &name, bool internal = false) const;
 
         /**
-         * @brief Deletes a bucket. It has to be empty; PurgeBucket() is what makes it so.
+         * @brief Deletes a bucket, and its objects with it.
+         *
+         * @par
+         * Nothing else ever would: an object is only ever reached through its bucket, so a row left
+         * behind would be unreachable for good and the file it names would be disk nothing accounts
+         * for. PurgeBucket() is the one that empties a bucket and keeps it.
+         *
+         * @par
+         * "background" is what a bucket of any size wants: emptying one can take minutes, and
+         * holding a request open for all of it is a request that times out while the removal
+         * carries on invisibly behind it. The server then answers as soon as it has written the
+         * work down.
+         *
+         * @par
+         * The bucket goes when the emptying finishes, so until then it stays listed - and still
+         * deletable. A caller watching for it to disappear is watching the right thing.
+         *
+         * @par
+         * Not [[nodiscard]], unlike most of these: deleting inline answers with nothing, since the
+         * bucket is gone by then, and ignoring the result is the normal way to call it. It is only
+         * worth reading when "background" is true.
+         *
+         * @param ern the bucket.
+         * @param background whether the server answers before the bucket and its objects are gone.
          */
-        void DeleteBucket(const std::string &ern) const;
+        DeleteBucketResult DeleteBucket(const std::string &ern, bool background = false) const;
 
         /**
          * @brief One page of buckets, and how many exist in total.
@@ -288,11 +311,24 @@ namespace Euclid::CDK::ESM {
         /**
          * @brief Deletes a bucket's objects, leaving the bucket itself in place.
          *
+         * @par
+         * "background" is what a bucket of any size wants: emptying one can take minutes, and
+         * holding a request open for all of it is a request that times out while the removal
+         * carries on invisibly behind it. The server then answers as soon as it has written the
+         * work down, and the result's "count" is what the bucket held rather than what has gone.
+         *
+         * @par
+         * Written down is the point: the job survives the instance that took it on being stopped -
+         * which the autoscaler does to an instance it sees no requests on - and another picks it up
+         * and carries on from where it got to.
+         *
          * @param ern    the bucket.
          * @param prefix narrows it to the keys that start with this; an empty one purges everything.
+         * @param background whether the server answers before it has finished removing the objects.
          */
         [[nodiscard]]
-        PurgeBucketResult PurgeBucket(const std::string &ern, const std::string &prefix = {}) const;
+        PurgeBucketResult PurgeBucket(const std::string &ern, const std::string &prefix = {},
+                                      bool background = false) const;
 
         /**
          * @brief Encrypts every object written to this bucket from now on, under an EKM key.

@@ -80,8 +80,26 @@ namespace Euclid::CDK::ESM {
         };
     }
 
+    DeleteBucketResult ToDeleteBucketResult(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                .count = Json::Number(value, "objects"),
+                .jobId = Json::Text(value, "jobId"),
+                .background = Json::Flag(value, "async"),
+        };
+    }
+
     PurgeBucketResult ToPurgeBucketResult(const boost::json::value &value) {
-        return {.ern = Json::Text(value, "ern"), .count = Json::Number(value, "count")};
+        // "count" when the purge ran inline, "objects" when it was taken on: the same figure at two
+        // points in the same work, and count reads it either way rather than a zero that only means
+        // the other field name was used.
+        const auto count = Json::Number(value, "count");
+        return {
+                .ern = Json::Text(value, "ern"),
+                .count = count != 0 ? count : Json::Number(value, "objects"),
+                .jobId = Json::Text(value, "jobId"),
+                .background = Json::Flag(value, "async"),
+        };
     }
 
     DeleteObjectsResult ToDeleteObjectsResult(const boost::json::value &value) {
