@@ -12,3 +12,8 @@ add_executable(messaging-walkthrough MessagingWalkthrough.cpp)
 target_link_libraries(messaging-walkthrough PRIVATE ${EUCLID_CDK_DEFAULT_TARGET})
 set_target_properties(messaging-walkthrough PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 euclid_cdk_copy_runtime_dlls(messaging-walkthrough)
+
+add_executable(monitoring-walkthrough MonitoringWalkthrough.cpp)
+target_link_libraries(monitoring-walkthrough PRIVATE ${EUCLID_CDK_DEFAULT_TARGET})
+set_target_properties(monitoring-walkthrough PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+euclid_cdk_copy_runtime_dlls(monitoring-walkthrough)

@@ -393,16 +393,24 @@ something that actually reassembles what it is sent.
 ### Examples
 
 ```bash
-./build/examples/eam-walkthrough       https://euclid.example.com jens secret [namespace]
-./build/examples/esm-walkthrough       https://euclid.example.com jens secret [namespace]
-./build/examples/messaging-walkthrough https://euclid.example.com jens secret [namespace]
+./build/examples/eam-walkthrough        https://euclid.example.com jens secret [namespace]
+./build/examples/esm-walkthrough        https://euclid.example.com jens secret [namespace]
+./build/examples/messaging-walkthrough  https://euclid.example.com jens secret [namespace]
+./build/examples/monitoring-walkthrough https://euclid.example.com jens secret [namespace]
 ```
 
-The EAM one reads only, apart from the namespace it switches to when one is given. The other two
-work in resources of their own, named after the moment they started, and delete them again at the
-end — so a run that dies halfway leaves something obviously disposable behind rather than touching
-anything of yours. The messaging one is both modules at once: a topic, a queue subscribed to it, and
-a message that travels.
+The EAM one reads only, apart from the namespace it switches to when one is given. The storage and
+messaging ones work in resources of their own, named after the moment they started, and delete them
+again at the end — so a run that dies halfway leaves something obviously disposable behind rather
+than touching anything of yours. The messaging one is both modules at once: a topic, a queue
+subscribed to it, and a message that travels.
+
+The monitoring one records and publishes a run of made-up work, then reads the rows back if the
+login may. It is the one that cannot clean up after itself — there is no delete for a metric, and
+they go when EMO's retention takes them — so it reports under a module name of its own rather than
+into anything you would recognise. It is also the clearest demonstration of what a step is: it
+prints what the run counted beside what the meters still hold, and the two differ by exactly what
+the publisher already took.
 
 ## Licence
 
