@@ -33,6 +33,17 @@ namespace Euclid::CDK {
         return defaultValue;
     }
 
+    double Json::Real(const boost::json::value &value, const std::string &name, const double defaultValue) {
+        const auto *found = field(value, name);
+        if (found == nullptr) return defaultValue;
+        if (found->is_double()) return found->as_double();
+        // An integer is a number that happens to have arrived without a point - 1 and 1.0 are the
+        // same measurement, and a reader of measurements should not tell them apart.
+        if (found->is_int64()) return static_cast<double>(found->as_int64());
+        if (found->is_uint64()) return static_cast<double>(found->as_uint64());
+        return defaultValue;
+    }
+
     bool Json::Flag(const boost::json::value &value, const std::string &name, const bool defaultValue) {
         const auto *found = field(value, name);
         return found != nullptr && found->is_bool() ? found->as_bool() : defaultValue;

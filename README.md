@@ -4,10 +4,11 @@ The C++ SDK for a [euclid](https://github.com/jensvogt/euclid) server, alongside
 euclid-pdk (Python) and euclid-ndk (Node.js).
 
 It covers **EAM** — euclid's access management module — which is where a login comes from, the two
-**request-signing schemes** a euclid client authenticates with, and seven modules reached through the
+**request-signing schemes** a euclid client authenticates with, and eight modules reached through the
 session a login answers with: **ESM** (storage), **EQS** (queues), **ENS** (notifications), **EKM**
-(keys and certificates), **EKV** (tables of items), **ESS** (secrets) and **ETS** (the FTP and SFTP
-endpoints onto a bucket). The other modules (EAP, EAG) speak the same protocol through the same
+(keys and certificates), **EKV** (tables of items), **ESS** (secrets), **ETS** (the FTP and SFTP
+endpoints onto a bucket) and **EMO** (monitoring, including a metrics registry an application
+records into). The other modules (EAP, EAG) speak the same protocol through the same
 client and will follow; until they do, `CDK::ModuleClient` is what one is built out of, and
 `EAM::Session::NewRequest()` and `CDK::HttpClient` reach any action this SDK does not name.
 
@@ -262,6 +263,55 @@ writes the desired state, so the server in the answer is usually still `STOPPED`
 `UpdateServer()` takes `std::optional` fields because the server distinguishes a field being *sent*
 from one that is not, rather than one value from another — an unset field leaves the stored one
 alone, and an empty string replaces it. Every action here is administrator-only.
+
+### Application monitoring
+
+`EMO::Emo` is the monitoring module's client — `PushMetrics()`, and the administrator-only `List()`
+and `Average()` for reading rows back. But an application does not want to push final numbers; it
+wants to count things and time them and have something else do the arithmetic. euclid-jdk gets that
+from Micrometer, and C++ has no Micrometer.
+
+It does not need one. What Micrometer provides is two separable things — meters an application
+records into, and a registry that accumulates them over a step and publishes the result — and
+euclid's own C++ modules have done both for years with `Core::Monitoring`. `EMO::MeterRegistry` is
+that, pushed through an authenticated session instead of a Unix socket:
+
+```cpp
+const EMO::Emo emo(session);
+EMO::MeterRegistry metrics(emo, {.module = "invoice-parser", .commonLabels = {{"host", hostname}}});
+
+const auto parsed   = metrics.CounterOf("invoices.parsed");
+const auto rejected = metrics.CounterOf("invoices.parsed", {{"outcome", "rejected"}});
+const auto duration = metrics.TimerOf("invoice.parse");
+metrics.GaugeFrom("queue.depth", [&queue] { return static_cast<double>(queue.size()); });
+
+for (const auto &invoice: incoming) {
+    const EMO::ScopedTimer measure(duration);          // recorded however the scope is left
+    Parse(invoice) ? parsed.Increment() : rejected.Increment();
+}
+```
+
+A thread publishes every step (a minute by default) and nothing else has to be arranged; a step of
+zero starts no thread and leaves `Publish()` to the application's own loop. What lands in EMO lands
+in the same rows its own collectors write, and so in the same rollups, retention and graphs as CPU,
+memory and the module gauges.
+
+Three things are worth knowing, because each is a way a graph could otherwise lie:
+
+- **A counter reports the step and starts again; a gauge reports what it reads and does not.** That
+  is what makes a counter a *rate* to EMO, which sums it on rollup, and a gauge a *gauge*, which
+  averages it. A counter pushed as a gauge is averaged into nonsense.
+- **A timer becomes three series** — `name.count` and `name.total` as rates, `name.max` as a gauge,
+  in milliseconds — under the same names euclid-jdk's Micrometer registry uses, so a C++
+  application's timings graph beside a Java one's. There are no percentiles, because EMO stores one
+  value per series per interval; a p99 would have to be a series of its own.
+- **Labels are what split one series into several**, and every combination is a stored row per step
+  forever. Decide them where the meter is created — a label carrying a request id is how a
+  monitoring database fills up.
+
+A push that fails is counted in `FailedPublishes()` and dropped rather than retried: a rate sent
+twice is counted twice, and nothing here throws at the application, which does not stop because it
+could not say how it was doing.
 
 ### Signing
 

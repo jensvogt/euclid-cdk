@@ -61,6 +61,22 @@ namespace Euclid::CDK {
         static long Number(const boost::json::value &value, const std::string &name, long defaultValue = 0);
 
         /**
+         * @brief A numeric field, as a double.
+         *
+         * @par
+         * What Number() is for the fields that count things, this is for the ones that measure
+         * them: a metric's value, a mean, a ratio. Reading one of those with Number() would turn
+         * half a millisecond into none.
+         *
+         * @param value        the containing value.
+         * @param name         field name.
+         * @param defaultValue what to answer when the field is absent or not a number.
+         * @return the number.
+         */
+        [[nodiscard]]
+        static double Real(const boost::json::value &value, const std::string &name, double defaultValue = 0.0);
+
+        /**
          * @brief A boolean field.
          *
          * @param value        the containing value.

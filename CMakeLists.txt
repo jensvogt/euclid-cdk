@@ -62,6 +62,7 @@ set(EUCLID_CDK_SOURCES
         src/dto/Eam.cpp
         src/dto/Ekm.cpp
         src/dto/Ekv.cpp
+        src/dto/Emo.cpp
         src/dto/Ens.cpp
         src/dto/Eqs.cpp
         src/dto/Esm.cpp
@@ -72,6 +73,8 @@ set(EUCLID_CDK_SOURCES
         src/eam/Session.cpp
         src/ekm/Ekm.cpp
         src/ekv/Ekv.cpp
+        src/emo/Emo.cpp
+        src/emo/MeterRegistry.cpp
         src/ens/Ens.cpp
         src/eqs/Eqs.cpp
         src/esm/Esm.cpp
@@ -95,6 +98,7 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/dto/Eam.h
         include/euclid/cdk/dto/Ekm.h
         include/euclid/cdk/dto/Ekv.h
+        include/euclid/cdk/dto/Emo.h
         include/euclid/cdk/dto/Ens.h
         include/euclid/cdk/dto/Eqs.h
         include/euclid/cdk/dto/Esm.h
@@ -105,6 +109,8 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/eam/Session.h
         include/euclid/cdk/ekm/Ekm.h
         include/euclid/cdk/ekv/Ekv.h
+        include/euclid/cdk/emo/Emo.h
+        include/euclid/cdk/emo/MeterRegistry.h
         include/euclid/cdk/ens/Ens.h
         include/euclid/cdk/eqs/Eqs.h
         include/euclid/cdk/esm/Esm.h
