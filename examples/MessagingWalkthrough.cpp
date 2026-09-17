@@ -52,10 +52,10 @@ namespace {
 
         // A long poll: the server holds this open until something lands or the window runs out, so
         // the delivery from the topic is waited for rather than polled for.
-        const auto received = eqs.ReceiveMessages(queueErn, {.maxMessages = 10, .waitTime = std::chrono::seconds(10)});
-        std::cout << "\nreceived " << received.items.size() << " message(s):\n";
+        const auto [total, items] = eqs.ReceiveMessages(queueErn, {.maxMessages = 10, .waitTime = std::chrono::seconds(10)});
+        std::cout << "\nreceived " << items.size() << " message(s):\n";
 
-        for (const auto &message: received.items) {
+        for (const auto &message: items) {
             std::cout << "  " << std::setw(38) << std::left << message.messageId
                       << std::setw(8) << message.priority << message.body << "\n"
                       << "      attributes:";
