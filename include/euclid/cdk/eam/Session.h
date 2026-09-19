@@ -78,12 +78,22 @@ namespace Euclid::CDK::EAM {
     };
 
     /**
-     * @brief Which grants to list. Naming none asks for everything granted in the account.
+     * @brief Which grants to list, and how to page them. Naming none asks for everything granted
+     * in the account.
+     *
+     * @par
+     * pageSize defaults to 0, which is every matching grant - not to a page, the way PageOptions
+     * does, because that is what this listing returned before paging existed. The account-wide
+     * listing is the one that grows: it is one row per principal per role.
      */
     struct EUCLID_CDK_API ListGrantsOptions {
         std::string principal;
         std::string role;
         std::string accountId;
+        long pageSize{0};
+        long pageIndex{0};
+        std::string sortColumn;
+        std::string sortDirection{"asc"};
     };
 
     /**
@@ -476,6 +486,25 @@ namespace Euclid::CDK::EAM {
         Page<Account> ListAccounts(const ListOptions &options = {}) const;
 
         /**
+         * @brief One account, by account ID or by ERN.
+         *
+         * @par
+         * What comes back is exactly what ListAccounts() describes each of its own with, so this
+         * is the single-account form of a listing rather than another view of one.
+         *
+         * @par
+         * An account is named by its ID rather than by its name: the ID is what an ERN's fourth
+         * field carries and what every resource in the installation is scoped by, while the name
+         * is descriptive and addresses nothing. A value starting with "ern:" is taken as an ERN
+         * and names the same account. Administrator only.
+         *
+         * @param accountIdOrErn the account's ID, or its ERN.
+         * @return the account.
+         */
+        [[nodiscard]]
+        Account GetAccount(const std::string &accountIdOrErn) const;
+
+        /**
          * @brief Deletes an account. Administrator only, and it must have no namespaces or grants
          * left.
          *
@@ -557,6 +586,13 @@ namespace Euclid::CDK::EAM {
          * @par
          * Note that a principal's grants are its *own* and not those of the groups it belongs to,
          * which is a different question - CheckPermission() answers the combined one.
+         *
+         * @par
+         * Paged with options.pageSize, which defaults to 0 and returns everything. The page's
+         * total is how many grants match the filter rather than how many the page holds, so it is
+         * what says whether there is another page. Results are ordered whether or not they are
+         * paged, because paging an unordered collection can show the same grant on two pages and
+         * never show another.
          *
          * @param options which grants to list.
          */

@@ -248,6 +248,35 @@ BOOST_AUTO_TEST_SUITE(EamSessionTest)
         BOOST_TEST(boost::json::parse(gateway.LastRequest().body()).at("userId").as_string() == "jens");
     }
 
+    BOOST_AUTO_TEST_CASE(GetsOneAccountByItsId) {
+        const FakeGateway gateway(gatewayHandler(R"({"account": {"accountId": "111", "name": "acme",
+                                                                 "ern": "ern:eam:account/111",
+                                                                 "description": "an account"}})"));
+        const auto session = builder(gateway).Login();
+
+        const auto account = session.GetAccount("111");
+        BOOST_TEST(account.accountId == "111");
+        BOOST_TEST(account.name == "acme");
+        BOOST_TEST(account.ern == "ern:eam:account/111");
+
+        // The ID rather than the name: the ID is what an ERN carries and what everything is
+        // scoped by, and it is left out of the ERN field rather than sent empty.
+        const auto body = boost::json::parse(gateway.LastRequest().body()).as_object();
+        BOOST_TEST(body.at("accountId").as_string() == "111");
+        BOOST_TEST(!body.contains("ern"));
+    }
+
+    BOOST_AUTO_TEST_CASE(GetsAnAccountByErnWhenGivenOne) {
+        const FakeGateway gateway(gatewayHandler(R"({"account": {"accountId": "111"}})"));
+        const auto session = builder(gateway).Login();
+
+        std::ignore = session.GetAccount("ern:euclid:eam:eu-central-1:111::account/111");
+
+        const auto body = boost::json::parse(gateway.LastRequest().body()).as_object();
+        BOOST_TEST(body.at("ern").as_string() == "ern:euclid:eam:eu-central-1:111::account/111");
+        BOOST_TEST(!body.contains("accountId"));
+    }
+
     BOOST_AUTO_TEST_CASE(GetsOneUserGroupWithItsMembers) {
         const FakeGateway gateway(gatewayHandler(R"({"userGroup": {"name": "ops", "ern": "ern:eam:user-group/ops",
                                                                    "description": "operations",
@@ -477,6 +506,28 @@ BOOST_AUTO_TEST_SUITE(EamRoleTest)
         const auto body = boost::json::parse(gateway.LastRequest().body());
         BOOST_TEST(body.at("principal").as_string() == "");
         BOOST_TEST(body.at("role").as_string() == "");
+        // A page size of zero is every grant, which is what this call returned before paging
+        // existed - so naming no options still means what it meant.
+        BOOST_TEST(body.at("pageSize").as_int64() == 0L);
+        BOOST_TEST(body.at("sortColumn").as_string() == "principal");
+    }
+
+    // The total counts every grant matching the filter rather than the page, which is what says
+    // there is another page to ask for.
+    BOOST_AUTO_TEST_CASE(GrantsArePagedAndTheTotalIsNotThePageSize) {
+        const FakeGateway gateway(gatewayHandler(R"({"total": 57, "grants": [{"grantId": "g-1", "role": "operator"}]})"));
+        const auto session = builder(gateway).Login();
+
+        const auto page = session.ListGrants({.pageSize = 25, .pageIndex = 2, .sortColumn = "created", .sortDirection = "desc"});
+
+        BOOST_TEST(page.total == 57L);
+        BOOST_TEST(page.items.size() == 1U);
+
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("pageSize").as_int64() == 25L);
+        BOOST_TEST(body.at("pageIndex").as_int64() == 2L);
+        BOOST_TEST(body.at("sortColumn").as_string() == "created");
+        BOOST_TEST(body.at("sortDirection").as_string() == "desc");
     }
 
     BOOST_AUTO_TEST_CASE(CheckPermissionSaysWhy) {

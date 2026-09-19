@@ -166,6 +166,15 @@ namespace Euclid::CDK::EAM {
         return ToPage<Account>(Call("list-accounts", ListPayload(options, "accountId")), "accounts", ToAccount);
     }
 
+    Account Session::GetAccount(const std::string &accountIdOrErn) const {
+        // Sent as whichever of the two it is: an account ID put in the ERN field would simply not
+        // be found, the same way GetBucket() tells them apart.
+        const boost::json::object payload = accountIdOrErn.starts_with("ern:")
+                                                    ? boost::json::object{{"ern", accountIdOrErn}}
+                                                    : boost::json::object{{"accountId", accountIdOrErn}};
+        return ToAccount(Json::Child(Call("get-account", payload), "account"));
+    }
+
     void Session::DeleteAccount(const std::string &accountId) const {
         std::ignore = Call("delete-account", {{"accountId", accountId}});
     }
@@ -212,6 +221,10 @@ namespace Euclid::CDK::EAM {
                 {"principal", options.principal},
                 {"role", options.role},
                 {"accountId", options.accountId},
+                {"pageSize", options.pageSize},
+                {"pageIndex", options.pageIndex},
+                {"sortColumn", options.sortColumn.empty() ? "principal" : options.sortColumn},
+                {"sortDirection", options.sortDirection.empty() ? "asc" : options.sortDirection},
         };
         return ToPage<Grant>(Call("list-grants", payload), "grants", ToGrant);
     }
