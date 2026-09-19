@@ -23,11 +23,11 @@
  *
  * @par What is here
  * EAM - euclid's access management module - and the two signing schemes a euclid client
- * authenticates with; and eight modules reached through a session EAM answered with: ESM (storage),
+ * authenticates with; and nine modules reached through a session EAM answered with: ESM (storage),
  * EQS (queues), ENS (notifications), EKM (keys and certificates), EKV (tables of items), ESS
- * (secrets), ETS (the FTP and SFTP endpoints onto a bucket) and EMO (monitoring - including
+ * (secrets), ETS (the FTP and SFTP endpoints onto a bucket), EMO (monitoring - including
  * EMO::MeterRegistry, which counts and times what an application does and publishes it on a step,
- * the job Micrometer does in euclid-jdk).
+ * the job Micrometer does in euclid-jdk) and EAP (the applications euclid runs).
  *
  * @code
  * const ESM::Esm esm(session);
@@ -40,9 +40,8 @@
  * @endcode
  *
  * @par
- * The rest (EAP, EAG) speak the same protocol through the same client and will follow.
- * Until they do, CDK::ModuleClient is what one is built out of, and EAM::Session::NewRequest() and
- * CDK::HttpClient reach any action this SDK does not name.
+ * Only EAG is left. Until it lands, CDK::ModuleClient is what a module client is built out
+ * of, and EAM::Session::NewRequest() and CDK::HttpClient reach any action this SDK does not name.
  *
  * @par Why there is no umbrella class
  * euclid-pdk and euclid-ndk open with a `Euclid` object whose only job is to write the server's URL
@@ -65,6 +64,7 @@
 #include <euclid/cdk/auth/SigningScheme.h>
 #include <euclid/cdk/dto/Com.h>
 #include <euclid/cdk/dto/Eam.h>
+#include <euclid/cdk/dto/Eap.h>
 #include <euclid/cdk/dto/Ekm.h>
 #include <euclid/cdk/dto/Ekv.h>
 #include <euclid/cdk/dto/Emo.h>
@@ -76,6 +76,7 @@
 #include <euclid/cdk/dto/Page.h>
 #include <euclid/cdk/eam/Eam.h>
 #include <euclid/cdk/eam/Session.h>
+#include <euclid/cdk/eap/Eap.h>
 #include <euclid/cdk/ekm/Ekm.h>
 #include <euclid/cdk/ekv/Ekv.h>
 #include <euclid/cdk/emo/Emo.h>

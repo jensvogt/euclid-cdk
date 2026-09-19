@@ -60,6 +60,7 @@ set(EUCLID_CDK_SOURCES
         src/auth/SigningScheme.cpp
         src/dto/Com.cpp
         src/dto/Eam.cpp
+        src/dto/Eap.cpp
         src/dto/Ekm.cpp
         src/dto/Ekv.cpp
         src/dto/Emo.cpp
@@ -71,6 +72,7 @@ set(EUCLID_CDK_SOURCES
         src/dto/Page.cpp
         src/eam/Eam.cpp
         src/eam/Session.cpp
+        src/eap/Eap.cpp
         src/ekm/Ekm.cpp
         src/ekv/Ekv.cpp
         src/emo/Emo.cpp
@@ -96,6 +98,7 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/auth/SigningScheme.h
         include/euclid/cdk/dto/Com.h
         include/euclid/cdk/dto/Eam.h
+        include/euclid/cdk/dto/Eap.h
         include/euclid/cdk/dto/Ekm.h
         include/euclid/cdk/dto/Ekv.h
         include/euclid/cdk/dto/Emo.h
@@ -107,6 +110,7 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/dto/Page.h
         include/euclid/cdk/eam/Eam.h
         include/euclid/cdk/eam/Session.h
+        include/euclid/cdk/eap/Eap.h
         include/euclid/cdk/ekm/Ekm.h
         include/euclid/cdk/ekv/Ekv.h
         include/euclid/cdk/emo/Emo.h

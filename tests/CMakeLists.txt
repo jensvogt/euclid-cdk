@@ -3,6 +3,7 @@ find_package(Boost CONFIG REQUIRED COMPONENTS unit_test_framework)
 add_executable(euclid-cdk-tests
         CredentialsTest.cpp
         EamTest.cpp
+        EapTest.cpp
         EkmTest.cpp
         EkvTest.cpp
         EmoTest.cpp
@@ -42,6 +43,6 @@ endif ()
 # a renamed suite fails loudly rather than quietly running none of it. The
 # list has to cover every BOOST_AUTO_TEST_SUITE name in this directory.
 # -------------------------------------------------------------------------
-foreach (EUCLID_CDK_SUITE IN ITEMS Credentials Eam Ekm Ekv Emo Ens Eqs Esm Ess Ets HttpSignature SigningScheme SigV4 Url)
+foreach (EUCLID_CDK_SUITE IN ITEMS Credentials Eam Eap Ekm Ekv Emo Ens Eqs Esm Ess Ets HttpSignature SigningScheme SigV4 Url)
     add_test(NAME ${EUCLID_CDK_SUITE} COMMAND euclid-cdk-tests --run_test=${EUCLID_CDK_SUITE}*)
 endforeach ()

@@ -4,13 +4,13 @@ The C++ SDK for a [euclid](https://github.com/jensvogt/euclid) server, alongside
 euclid-pdk (Python) and euclid-ndk (Node.js).
 
 It covers **EAM** — euclid's access management module — which is where a login comes from, the two
-**request-signing schemes** a euclid client authenticates with, and eight modules reached through the
+**request-signing schemes** a euclid client authenticates with, and nine modules reached through the
 session a login answers with: **ESM** (storage), **EQS** (queues), **ENS** (notifications), **EKM**
 (keys and certificates), **EKV** (tables of items), **ESS** (secrets), **ETS** (the FTP and SFTP
-endpoints onto a bucket) and **EMO** (monitoring, including a metrics registry an application
-records into). The other modules (EAP, EAG) speak the same protocol through the same
-client and will follow; until they do, `CDK::ModuleClient` is what one is built out of, and
-`EAM::Session::NewRequest()` and `CDK::HttpClient` reach any action this SDK does not name.
+endpoints onto a bucket), **EMO** (monitoring, including a metrics registry an application records
+into) and **EAP** (the applications euclid runs). Only EAG is left; until it lands,
+`CDK::ModuleClient` is what a module client is built out of, and `EAM::Session::NewRequest()` and
+`CDK::HttpClient` reach any action this SDK does not name.
 
 Both a **shared** and a **static** library are built: `libeuclid-cdk.so` and `libeuclid-cdk.a`.
 
@@ -241,6 +241,49 @@ an unset description leaves the stored one alone, an empty one clears it. A valu
 the server refuses an empty one, so this does too, one round trip earlier. Naming a `keyErn` moves
 the secret onto that key, which is how one is taken off a key being retired; that is not a rotation,
 and only a new value bumps the version.
+
+### Applications
+
+`EAP::Eap` is what euclid runs, from what, and as whom.
+
+```cpp
+const EAP::Eap eap(session);
+
+eap.CreateApplication("order-service", std::string(EAP::RuntimeBinary), "artifacts", "order-service-1.4.0",
+                      {.queues = {"orders"}, .maxInstances = 4});
+eap.StartApplication("order-service");
+```
+
+An application is deployed from an artifact already in a bucket — ESM puts it there, EAP names it.
+The deployment says which buckets and queues it may reach, and euclid grants those to the identity
+it runs as: a technical principal it creates for the application unless one is named, with no
+password, no login and one access key. Nothing an application leaks is then a person's credential.
+
+Starting is a desired state rather than a wait, as in ETS, so the application in the answer is
+usually still `STOPPED`. `RestartApplication()` exists instead of a stop followed by a start because
+between those two the desired state is stopped, and a caller that fails in between leaves the
+application down.
+
+`UpdateApplication()` takes `std::optional` fields — an unset command leaves the stored one alone,
+an empty one hands the artifact back to the runtime's own interpreter. Two things there are worth
+knowing: `buckets` and `queues` are re-resolved together, so naming one and not the other revokes
+what the other granted (name both, or neither); and `nameSpace` is a *move* rather than a field
+change, which is why unset and empty differ — empty moves the application back to the account root.
+
+**`ReportLoad()` is the one call here an application makes about itself** rather than an
+administrator making it about the application:
+
+```cpp
+// on a schedule, while the application works
+eap.ReportLoad("order-service", {.utilisation = 42.5, .backlog = queue.size(), .active = inFlight});
+```
+
+The instance id comes from `EUCLID_INSTANCE_ID`, which euclid's manager sets for every process it
+starts, so an application need not carry it around; `EAP::Eap::InstanceId()` reads it. The
+application id is always sent, even though the server can infer it from a caller named
+`app-<something>` — that inference only holds while an application's id and the identity it runs as
+agree, and when they didn't, every report went to a pool that did not exist, answered `200`, and
+left the autoscaler blind. Everything else in this module is administrator-only.
 
 ### Transfer servers
 
