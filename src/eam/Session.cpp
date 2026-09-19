@@ -78,6 +78,10 @@ namespace Euclid::CDK::EAM {
         return ToPage<User>(Call("list-users", ListPayload(options, "userId")), "users", ToUser);
     }
 
+    User Session::GetUser(const std::string &userId) const {
+        return ToUser(Json::Child(Call("get-user", {{"userId", userId}}), "user"));
+    }
+
     User Session::Register(const std::string &userId, const std::string &password, const RegisterOptions &options) const {
         const boost::json::object payload{
                 {"userId", userId},
@@ -128,6 +132,15 @@ namespace Euclid::CDK::EAM {
 
     Page<UserGroup> Session::ListUserGroups(const ListOptions &options) const {
         return ToPage<UserGroup>(Call("list-user-groups", ListPayload(options, "name")), "userGroups", ToUserGroup);
+    }
+
+    UserGroup Session::GetUserGroup(const std::string &nameOrErn) const {
+        // Sent as whichever of the two it is: a name put in the ERN field would simply not be
+        // found, the same way GetBucket() tells them apart.
+        const boost::json::object payload = nameOrErn.starts_with("ern:")
+                                                    ? boost::json::object{{"ern", nameOrErn}}
+                                                    : boost::json::object{{"name", nameOrErn}};
+        return ToUserGroup(Json::Child(Call("get-user-group", payload), "userGroup"));
     }
 
     void Session::AddUserToUserGroup(const std::string &userGroup, const std::string &user) const {

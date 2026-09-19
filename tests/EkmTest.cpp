@@ -132,6 +132,48 @@ BOOST_AUTO_TEST_SUITE(EkmKeyTest)
         BOOST_TEST(lastBody(client.gateway).at("sortColumn").as_string() == "name");
     }
 
+    BOOST_AUTO_TEST_CASE(GetsOneKeyByNameWithoutItsMaterial) {
+        const auto key = boost::json::serialize(boost::json::object{
+                {"key", boost::json::object{
+                                {"name", kKeyId},
+                                {"ern", kKeyErn},
+                                {"description", "customer exports"},
+                                {"algorithm", "AES"},
+                                {"length", 256},
+                                {"status", "AVAILABLE"},
+                                {"tags", boost::json::object{{"team", "finance"}}},
+                                {"created", "2026-01-01T00:00:00Z"}}}});
+
+        const EkmClient client(Test::Answering(key));
+
+        const auto fetched = client.ekm.GetKey(kKeyId);
+        BOOST_TEST(fetched.name == kKeyId);
+        BOOST_TEST(fetched.ern == kKeyErn);
+        BOOST_TEST(fetched.length == 256L);
+        BOOST_TEST(fetched.tags.at("team") == "finance");
+        // What this returns is the key's description; the material never leaves the module, so
+        // there is no field here that could carry it.
+        BOOST_TEST(fetched.deletionDate.empty());
+
+        // kKeyId is a name rather than an ERN, so that is the field it goes in - and the other one
+        // is left out rather than sent empty.
+        const auto body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("name").as_string() == kKeyId);
+        BOOST_TEST(!body.contains("ern"));
+    }
+
+    // A name is resolved in the session's own namespace and an ERN is not, so which of the two was
+    // given has to reach the server as the field it is - the caller should not have to say.
+    BOOST_AUTO_TEST_CASE(GetsAKeyByErnWhenGivenOne) {
+        const EkmClient client(Test::Answering(R"({"key": {"name": "key-1", "ern": "ern:key/1"}})"));
+
+        std::ignore = client.ekm.GetKey(kKeyErn);
+
+        const auto body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("ern").as_string() == kKeyErn);
+        BOOST_TEST(!body.contains("name"));
+    }
+
     // Scheduled rather than immediate: the window is the only chance anybody gets to notice.
     BOOST_AUTO_TEST_CASE(SchedulesAKeyForDeletionRatherThanDeletingIt) {
         const EkmClient client(Test::Answering(R"({"name": "11111111-1111-1111-1111-111111111111", "ern": "ern:key/1",

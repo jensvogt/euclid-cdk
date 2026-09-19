@@ -317,6 +317,24 @@ namespace Euclid::CDK::EAM {
         Page<User> ListUsers(const ListOptions &options = {}) const;
 
         /**
+         * @brief One user, by the id they are known by.
+         *
+         * @par
+         * What comes back is exactly what ListUsers() describes each of its own with, so this is
+         * the single-user form of a listing rather than another view of one.
+         *
+         * @par
+         * The id rather than the ERN, because that is what everything else names a user with: a
+         * grant's principal, an application's technical identity, the audit trail's userId column.
+         * A user of another account is a 404, the way a listing would not have shown them.
+         *
+         * @param userId the user's id.
+         * @return the user.
+         */
+        [[nodiscard]]
+        User GetUser(const std::string &userId) const;
+
+        /**
          * @brief Creates a user.
          *
          * @param userId   the new user's ID.
@@ -393,6 +411,26 @@ namespace Euclid::CDK::EAM {
          */
         [[nodiscard]]
         Page<UserGroup> ListUserGroups(const ListOptions &options = {}) const;
+
+        /**
+         * @brief One user group, by name or by ERN, with its members.
+         *
+         * @par
+         * What comes back is exactly what ListUserGroups() describes each of its own with, member
+         * ids included, so this is the single-group form of a listing rather than another view of
+         * one.
+         *
+         * @par
+         * A value starting with "ern:" is taken as an ERN; anything else is a name. Groups are
+         * installation-wide rather than scoped to an account, so a name identifies one without
+         * further qualification, and the ERN is accepted only because that is what a grant's
+         * principal carries.
+         *
+         * @param nameOrErn the group's name, or its ERN.
+         * @return the group.
+         */
+        [[nodiscard]]
+        UserGroup GetUserGroup(const std::string &nameOrErn) const;
 
         /**
          * @brief Adds a user to a group.

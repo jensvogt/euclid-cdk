@@ -231,6 +231,52 @@ BOOST_AUTO_TEST_SUITE(EamSessionTest)
         BOOST_TEST(body.at("isAdmin").as_bool() == false);
     }
 
+    // One user is described exactly as a listing describes each of its own, so that a field added
+    // to the one is in the other by construction rather than by somebody remembering.
+    BOOST_AUTO_TEST_CASE(GetsOneUserTheWayAListingDescribesEach) {
+        const FakeGateway gateway(gatewayHandler(R"({"user": {"userId": "jens", "ern": "ern:eam:user/jens",
+                                                              "email": "jens@example.com", "accountId": "000000000000",
+                                                              "region": "eu-central-1"}})"));
+        const auto session = builder(gateway).Login();
+
+        const auto user = session.GetUser("jens");
+        BOOST_TEST(user.userId == "jens");
+        BOOST_TEST(user.ern == "ern:eam:user/jens");
+        BOOST_TEST(user.email == "jens@example.com");
+
+        // The id rather than the ERN: that is what everything else names a user with.
+        BOOST_TEST(boost::json::parse(gateway.LastRequest().body()).at("userId").as_string() == "jens");
+    }
+
+    BOOST_AUTO_TEST_CASE(GetsOneUserGroupWithItsMembers) {
+        const FakeGateway gateway(gatewayHandler(R"({"userGroup": {"name": "ops", "ern": "ern:eam:user-group/ops",
+                                                                   "description": "operations",
+                                                                   "userIds": ["jens", "jill"]}})"));
+        const auto session = builder(gateway).Login();
+
+        const auto group = session.GetUserGroup("ops");
+        BOOST_TEST(group.name == "ops");
+        BOOST_REQUIRE(group.userIds.size() == 2U);
+        BOOST_TEST(group.userIds[0] == "jens");
+
+        const auto body = boost::json::parse(gateway.LastRequest().body()).as_object();
+        BOOST_TEST(body.at("name").as_string() == "ops");
+        BOOST_TEST(!body.contains("ern"));
+    }
+
+    // Groups are installation-wide, so a name is enough - but a grant's principal carries the ERN,
+    // and that has to reach the server as the field it is rather than as a name.
+    BOOST_AUTO_TEST_CASE(GetsAUserGroupByErnWhenGivenOne) {
+        const FakeGateway gateway(gatewayHandler(R"({"userGroup": {"name": "ops"}})"));
+        const auto session = builder(gateway).Login();
+
+        std::ignore = session.GetUserGroup("ern:euclid:eam:eu-central-1:000000000000:user-group/ops");
+
+        const auto body = boost::json::parse(gateway.LastRequest().body()).as_object();
+        BOOST_TEST(body.at("ern").as_string() == "ern:euclid:eam:eu-central-1:000000000000:user-group/ops");
+        BOOST_TEST(!body.contains("name"));
+    }
+
     BOOST_AUTO_TEST_CASE(ReadsACreatedAccessKey) {
         const FakeGateway gateway(gatewayHandler(R"({"accessKeyId": "AKIANEW", "secretAccessKey": "s3cr3t", "createdAt": "2026-09-12T10:00:00Z"})"));
         const auto session = builder(gateway).Login();

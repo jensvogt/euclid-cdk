@@ -47,6 +47,15 @@ namespace Euclid::CDK::EKM {
         return ToPage<Key>(Call("list-keys", ListPayload(options, "name")), "keys", ToKey);
     }
 
+    Key Ekm::GetKey(const std::string &nameOrErn) const {
+        // Sent as whichever of the two it is: the server resolves a name against the session's own
+        // account and namespace, and a name put in the ERN field would simply not be found.
+        const boost::json::object payload = nameOrErn.starts_with("ern:")
+                                                    ? boost::json::object{{"ern", nameOrErn}}
+                                                    : boost::json::object{{"name", nameOrErn}};
+        return ToKey(Json::Child(Call("get-key", payload), "key"));
+    }
+
     DeleteKeyResult Ekm::DeleteKey(const std::string &keyId, const long pendingWindowInDays) const {
         const boost::json::object payload{{"keyId", keyId}, {"pendingWindowInDays", pendingWindowInDays}};
         return ToDeleteKeyResult(Call("delete-key", payload));

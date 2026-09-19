@@ -202,10 +202,21 @@ namespace Euclid::CDK::EKV {
          * The count is counted rather than looked up, so this is not free on a large table.
          */
         [[nodiscard]]
+        TableDescription GetTable(const std::string &name) const;
+
+        /**
+         * @brief One table.
+         *
+         * @deprecated Renamed to GetTable(), for consistency with every other module's way of
+         * naming the call that reads one thing. This delegate sends get-table like its replacement
+         * does - the old describe-table action no longer exists server-side, so keeping it here
+         * would only produce a 4xx.
+         */
+        [[nodiscard, deprecated("renamed to GetTable()")]]
         TableDescription DescribeTable(const std::string &name) const;
 
         /**
-         * @brief One page of tables, each described as DescribeTable() would describe it.
+         * @brief One page of tables, each described as GetTable() would describe it.
          *
          * @par
          * The session's own account and namespace, and "total" counts that scope rather than the

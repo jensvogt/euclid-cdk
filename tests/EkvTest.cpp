@@ -114,15 +114,15 @@ BOOST_AUTO_TEST_SUITE(EkvTableTest)
         BOOST_TEST(lastBody(client.gateway).at("sortKey").as_string() == "");
     }
 
-    BOOST_AUTO_TEST_CASE(DescribesAndListsTables) {
+    BOOST_AUTO_TEST_CASE(GetsAndListsTables) {
         const auto listed = boost::json::serialize(boost::json::object{
                 {"total", 2},
                 {"tables", boost::json::array{table(), boost::json::object{{"name", "settings"}, {"partitionKey", "userId"}}}}});
 
-        const EkvClient client(Test::AnsweringByAction({{"describe-table", boost::json::serialize(table())},
+        const EkvClient client(Test::AnsweringByAction({{"get-table", boost::json::serialize(table())},
                                                         {"list-tables", listed}}));
 
-        BOOST_TEST(client.ekv.DescribeTable("sessions").itemCount == 12L);
+        BOOST_TEST(client.ekv.GetTable("sessions").itemCount == 12L);
         BOOST_TEST(lastBody(client.gateway).at("name").as_string() == "sessions");
 
         const auto page = client.ekv.ListTables({.prefix = "se"});
@@ -131,6 +131,29 @@ BOOST_AUTO_TEST_SUITE(EkvTableTest)
         BOOST_TEST(page.items[0].name == "sessions");
         BOOST_TEST(page.items[1].sortKey.empty());
         BOOST_TEST(lastBody(client.gateway).at("sortColumn").as_string() == "name");
+    }
+
+    // Kept for callers that still name it the old way, but describe-table no longer exists
+    // server-side - so the delegate has to send get-table rather than what it is named after.
+    BOOST_AUTO_TEST_CASE(TheDeprecatedDescribeTableSendsTheNewAction) {
+        const EkvClient client(Test::AnsweringByAction({{"get-table", boost::json::serialize(table())}}));
+
+        // The deprecation is meant for callers; this is the one place that has to keep calling it.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#else
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+        BOOST_TEST(client.ekv.DescribeTable("sessions").itemCount == 12L);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#else
+#pragma GCC diagnostic pop
+#endif
+
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "get-table");
     }
 
     BOOST_AUTO_TEST_CASE(DeletingATableSaysHowManyItemsWentWithIt) {

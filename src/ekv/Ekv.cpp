@@ -31,8 +31,12 @@ namespace Euclid::CDK::EKV {
         return ToTableDescription(Call("create-table", payload));
     }
 
+    TableDescription Ekv::GetTable(const std::string &name) const {
+        return ToTableDescription(Call("get-table", {{"name", name}}));
+    }
+
     TableDescription Ekv::DescribeTable(const std::string &name) const {
-        return ToTableDescription(Call("describe-table", {{"name", name}}));
+        return GetTable(name);
     }
 
     Page<TableDescription> Ekv::ListTables(const ListOptions &options) const {

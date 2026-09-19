@@ -185,6 +185,26 @@ namespace Euclid::CDK::EKM {
         Page<Key> ListKeys(const ListOptions &options = {}) const;
 
         /**
+         * @brief One key, by name or by ERN. Its description, never its material.
+         *
+         * @par
+         * What comes back is exactly what ListKeys() describes each of its own with - name, ERN,
+         * description, algorithm, length, status, tags and timestamps - so this is the single-key
+         * form of a listing rather than another view of one.
+         *
+         * @par
+         * A value starting with "ern:" is taken as an ERN and names one key in the installation;
+         * anything else is a name and is resolved in the session's own account and namespace, the
+         * pair CreateKey() built the ERN from. A key that exists only in another namespace is a
+         * 404 when asked for by name.
+         *
+         * @param nameOrErn the key's name, or its ERN.
+         * @return the key.
+         */
+        [[nodiscard]]
+        Key GetKey(const std::string &nameOrErn) const;
+
+        /**
          * @brief Schedules a key for deletion, and answers with the date it goes for good.
          *
          * @par
