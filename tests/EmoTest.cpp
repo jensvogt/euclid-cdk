@@ -398,10 +398,20 @@ BOOST_AUTO_TEST_SUITE(EmoRegistryTest)
 
         {
             EMO::MeterRegistry registry(emo, {.module = "invoice-parser",
-                                              .step = std::chrono::milliseconds(60),
+                                              .step = std::chrono::milliseconds(50),
                                               .publishOnStop = false});
             registry.CounterOf("invoices.parsed").Increment();
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+            // Waited for rather than slept through. What this has to show is that the thread
+            // publishes again and again with nobody asking it to; how many steps a machine gets
+            // through in a fixed window is a property of the machine, and a push here is a real
+            // round trip through a gateway that serves one connection at a time. Sleeping a fixed
+            // 250ms and demanding two of them is a test that fails on a loaded runner while the
+            // thread is working perfectly - which is what it did.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (pushes.load() < 2 && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
         }
 
         // Several steps went by and each sent once - and stopping did not add one, since it was
