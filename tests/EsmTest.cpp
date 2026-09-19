@@ -176,6 +176,32 @@ BOOST_AUTO_TEST_SUITE(EsmBucketTest)
         BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-target"]) == "esm");
     }
 
+    // One bucket is described exactly as a listing describes each of its own, so that a field
+    // added to the one is in the other by construction rather than by somebody remembering.
+    BOOST_AUTO_TEST_CASE(DescribesOneBucketTheWayAListingDescribesEach) {
+        const EsmClient client(Test::Answering(R"({"bucket": {"name": "reports", "ern": "ern:bucket/reports",
+                                                              "owner": "jens", "size": 2048, "objects": 7,
+                                                              "tags": {"team": "media"}, "encrypted": true}})"));
+
+        const auto bucket = client.esm.GetBucket("reports");
+
+        BOOST_TEST(bucket.ern == "ern:bucket/reports");
+        BOOST_TEST(bucket.size == 2048L);
+        BOOST_TEST(bucket.objects == 7L);
+        BOOST_TEST(bucket.encrypted);
+        BOOST_TEST(lastBody(client.gateway).at("name").as_string() == "reports");
+    }
+
+    // A name is resolved in the session's own namespace and an ERN is not, so which of the two was
+    // given has to reach the server as the field it is - the caller should not have to say.
+    BOOST_AUTO_TEST_CASE(AsksForABucketByErnAsWellAsByName) {
+        const EsmClient client(Test::Answering(R"({"bucket": {"name": "reports", "ern": "ern:bucket/reports"}})"));
+
+        std::ignore = client.esm.GetBucket(kBucket);
+
+        BOOST_TEST(lastBody(client.gateway).at("ern").as_string() == kBucket);
+    }
+
     // The actions whose whole answer is one value are answered as that value rather than as an
     // object a caller has to pick apart.
     BOOST_AUTO_TEST_CASE(AnswersTheSingleValueActionsAsValues) {
@@ -564,6 +590,59 @@ BOOST_AUTO_TEST_SUITE(EsmTransferTest)
         BOOST_TEST(storage.Attempts("create-download") == 0);
     }
 
+    // One part is not a multipart upload.
+    //
+    // create-upload, upload-part and complete-upload are three round trips, and on the server an
+    // upload directory, a part file, an assembly pass and a separate MD5 - none of which buys
+    // anything when there is only ever going to be one part. Measured on a development installation
+    // before this existed: 0.94 parts per upload, so essentially every one was single-part, and
+    // 793,614 objects written in an hour with every one of them under a kilobyte.
+    BOOST_AUTO_TEST_CASE(SendsOnePutObjectForAFileBelowThePartSize) {
+        FakeStorage storage;
+        const EsmClient client(storageHandler(storage));
+
+        const ScratchFile source("small.bin");
+        source.Write("some bytes");
+
+        const auto uploaded = client.esm.UploadFile(kBucket, "data/small.bin", source.path, {.partSize = 5000});
+
+        BOOST_TEST(uploaded.size == 10L);
+        BOOST_TEST(storage.Attempts("put-object") == 1);
+        BOOST_TEST(storage.Attempts("create-upload") == 0);
+        BOOST_TEST(storage.Attempts("upload-part") == 0);
+    }
+
+    // The boundary, stated rather than left to the reader: strictly below goes whole, equal does not.
+    BOOST_AUTO_TEST_CASE(AFileExactlyOnePartLongStillUsesMultipart) {
+        FakeStorage storage;
+        const EsmClient client(storageHandler(storage));
+
+        const ScratchFile source("exact.bin");
+        source.Write("some bytes");
+
+        std::ignore = client.esm.UploadFile(kBucket, "data/exact.bin", source.path, {.partSize = 10});
+
+        BOOST_TEST(storage.Attempts("create-upload") == 1);
+        BOOST_TEST(storage.Attempts("put-object") == 0);
+    }
+
+    // put-object carries attributes on its own headers, so a file that changed route could lose
+    // the metadata whatever put it there knows about it.
+    BOOST_AUTO_TEST_CASE(ASmallUploadStillCarriesItsAttributes) {
+        FakeStorage storage;
+        const EsmClient client(storageHandler(storage));
+
+        const ScratchFile source("attributed-small.bin");
+        source.Write("some bytes");
+
+        std::ignore = client.esm.UploadFile(kBucket, "data/attributed-small.bin", source.path,
+                                            {.partSize = 5000, .attributes = {{"origin", std::string("EsmTest")}}});
+
+        BOOST_TEST(storage.Attempts("put-object") == 1);
+        const auto attributes = boost::json::parse(storage.AttributeHeader(kBucket, "data/attributed-small.bin"));
+        BOOST_TEST(attributes.at("origin").at("value").as_string() == "EsmTest");
+    }
+
     BOOST_AUTO_TEST_CASE(StillMakesAnObjectOutOfAnEmptyFile) {
         FakeStorage storage;
         const EsmClient client(storageHandler(storage));
@@ -572,8 +651,14 @@ BOOST_AUTO_TEST_SUITE(EsmTransferTest)
         source.Write({});
 
         const auto uploaded = client.esm.UploadFile(kBucket, "data/empty.bin", source.path);
+
+        // Zero bytes is below any part size, so it goes the way every other small file goes. It
+        // used to create an upload, send one empty part and complete it - three calls to store
+        // nothing, with the part manufactured because an empty file yields none. The object that
+        // results is the same either way.
         BOOST_TEST(uploaded.size == 0L);
-        BOOST_TEST(storage.Attempts("upload-part") == 1);
+        BOOST_TEST(storage.Attempts("put-object") == 1);
+        BOOST_TEST(storage.Attempts("create-upload") == 0);
         BOOST_TEST(storage.Object(kBucket, "data/empty.bin").has_value());
     }
 
@@ -633,7 +718,7 @@ BOOST_AUTO_TEST_SUITE(EsmRetryTest)
         const ScratchFile source("retried.bin");
         source.Write("some bytes");
 
-        const auto uploaded = client.esm.UploadFile(kBucket, "data/retried.bin", source.path);
+        const auto uploaded = client.esm.UploadFile(kBucket, "data/retried.bin", source.path, {.partSize = 10});
         BOOST_TEST(uploaded.size == 10L);
         BOOST_TEST(storage.Attempts("upload-part") == 2);
     }
@@ -648,7 +733,7 @@ BOOST_AUTO_TEST_SUITE(EsmRetryTest)
         const ScratchFile source("bracketed.bin");
         source.Write("some bytes");
 
-        std::ignore = client.esm.UploadFile(kBucket, "data/bracketed.bin", source.path);
+        std::ignore = client.esm.UploadFile(kBucket, "data/bracketed.bin", source.path, {.partSize = 10});
         BOOST_TEST(storage.Attempts("create-upload") == 2);
         BOOST_TEST(storage.Attempts("complete-upload") == 2);
     }
@@ -662,7 +747,7 @@ BOOST_AUTO_TEST_SUITE(EsmRetryTest)
         source.Write("some bytes");
 
         try {
-            std::ignore = client.esm.UploadFile(kBucket, "data/doomed.bin", source.path);
+            std::ignore = client.esm.UploadFile(kBucket, "data/doomed.bin", source.path, {.partSize = 10});
             BOOST_FAIL("expected a ServiceError");
         } catch (const ServiceError &ex) {
             BOOST_TEST(ex.Action() == "upload-part");
@@ -681,7 +766,7 @@ BOOST_AUTO_TEST_SUITE(EsmRetryTest)
         const ScratchFile source("rejected.bin");
         source.Write("some bytes");
 
-        BOOST_CHECK_THROW(std::ignore = client.esm.UploadFile(kBucket, "data/rejected.bin", source.path), ServiceError);
+        BOOST_CHECK_THROW(std::ignore = client.esm.UploadFile(kBucket, "data/rejected.bin", source.path, {.partSize = 10}), ServiceError);
         BOOST_TEST(storage.Attempts("upload-part") == 1);
     }
 

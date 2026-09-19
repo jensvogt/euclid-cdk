@@ -26,6 +26,19 @@ namespace Euclid::CDK::ENS {
         return ToPage<Topic>(Call("list-topics", ListPayload(options, "name")), "topics", ToTopic);
     }
 
+    Topic Ens::GetTopic(const std::string &nameOrErn) const {
+        // Sent as whichever of the two it is: the server resolves a name against the session's own
+        // account and namespace, and a name put in the ERN field would simply not be found.
+        const boost::json::object payload = nameOrErn.starts_with("ern:")
+                                                    ? boost::json::object{{"ern", nameOrErn}}
+                                                    : boost::json::object{{"name", nameOrErn}};
+        return ToTopic(Call("get-topic", payload).at("topic"));
+    }
+
+    Message Ens::GetMessage(const std::string &messageId) const {
+        return ToMessage(Call("get-message", {{"messageId", messageId}}).at("message"));
+    }
+
     std::string Ens::GetTopicErn(const std::string &name) const {
         return TextOf("get-topic-ern", {{"name", name}}, "ern");
     }

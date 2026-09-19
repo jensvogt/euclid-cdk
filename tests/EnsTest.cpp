@@ -57,6 +57,33 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(EnsTopicTest)
 
+    // One topic and one message are described exactly as a listing describes each of its own.
+    BOOST_AUTO_TEST_CASE(DescribesOneTopicAndOneMessageTheWayAListingDescribesEach) {
+        const EnsClient client(Test::AnsweringByAction({
+                {"get-topic", R"({"topic": {"name": "orders", "ern": "ern:topic/orders", "owner": "jens",
+                                            "messages": 12, "retentionPeriod": 86400}})"},
+                {"get-message", R"({"message": {"messageId": "m-1", "topicErn": "ern:topic/orders",
+                                                "body": "hello", "status": "PUBLISHED"}})"},
+        }));
+
+        const auto topic = client.ens.GetTopic("orders");
+        BOOST_TEST(topic.ern == "ern:topic/orders");
+        BOOST_TEST(topic.messages == 12L);
+        BOOST_TEST(lastBody(client.gateway).at("name").as_string() == "orders");
+
+        const auto message = client.ens.GetMessage("m-1");
+        BOOST_TEST(message.body == "hello");
+        BOOST_TEST(lastBody(client.gateway).at("messageId").as_string() == "m-1");
+    }
+
+    BOOST_AUTO_TEST_CASE(AsksForATopicByErnAsWellAsByName) {
+        const EnsClient client(Test::Answering(R"({"topic": {"name": "orders", "ern": "ern:topic/orders"}})"));
+
+        std::ignore = client.ens.GetTopic(kTopic);
+
+        BOOST_TEST(lastBody(client.gateway).at("ern").as_string() == kTopic);
+    }
+
     BOOST_AUTO_TEST_CASE(CreatesAndListsTopics) {
         const auto topics = boost::json::serialize(boost::json::object{
                 {"total", 2},

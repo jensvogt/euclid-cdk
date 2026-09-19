@@ -275,6 +275,25 @@ namespace Euclid::CDK::ESM {
         Page<Bucket> ListBuckets(const ListOptions &options = {}, bool includeInternal = false) const;
 
         /**
+         * @brief One bucket, by name or by ERN.
+         *
+         * @par
+         * What comes back is exactly what ListBuckets() describes each of its own with - the ERN,
+         * the account and namespace, the size and object count, encryption, tags and timestamps -
+         * so this is the single-bucket form of a listing rather than another view of one.
+         *
+         * @par
+         * A value starting with "ern:" is taken as an ERN and names one bucket in the
+         * installation; anything else is a name and is resolved in the session's own account and
+         * namespace, the way GetBucketErn() resolves one. A bucket that exists only in another
+         * namespace is a 404 when asked for by name.
+         *
+         * @param nameOrErn the bucket's name, or its ERN.
+         */
+        [[nodiscard]]
+        Bucket GetBucket(const std::string &nameOrErn) const;
+
+        /**
          * @brief The ERN of the bucket of this name, in the session's account and namespace.
          */
         [[nodiscard]]

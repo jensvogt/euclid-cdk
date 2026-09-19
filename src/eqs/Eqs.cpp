@@ -57,6 +57,19 @@ namespace Euclid::CDK::EQS {
         return ToPage<Queue>(Call("list-queues", payload), "queues", ToQueue);
     }
 
+    Queue Eqs::GetQueue(const std::string &nameOrErn) const {
+        // Sent as whichever of the two it is: the server resolves a name against the session's own
+        // account and namespace, and a name put in the ERN field would simply not be found.
+        const boost::json::object payload = nameOrErn.starts_with("ern:")
+                                                    ? boost::json::object{{"ern", nameOrErn}}
+                                                    : boost::json::object{{"name", nameOrErn}};
+        return ToQueue(Call("get-queue", payload).at("queue"));
+    }
+
+    Message Eqs::GetMessage(const std::string &messageId) const {
+        return ToMessage(Call("get-message", {{"messageId", messageId}}).at("message"));
+    }
+
     std::string Eqs::GetQueueErn(const std::string &name) const {
         return TextOf("get-queue-ern", {{"name", name}}, "ern");
     }

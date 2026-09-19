@@ -290,6 +290,37 @@ namespace Euclid::CDK::EQS {
         Page<Queue> ListQueues(const ListOptions &options = {}, bool includeInternal = false) const;
 
         /**
+         * @brief One queue, by name or by ERN.
+         *
+         * @par
+         * What comes back is exactly what ListQueues() describes each of its own
+         * with - the ERN, the owner, visibility, delay and retention, the dead letter queue, tags and the available/delayed/in-flight counts - so this is the single-queue form of a listing rather than another
+         * view of one.
+         *
+         * @par
+         * A value starting with "ern:" is taken as an ERN and names one queue in the
+         * installation; anything else is a name and is resolved in the session's own account and
+         * namespace, the way GetQueueErn() resolves one.
+         *
+         * @param nameOrErn the queue's name, or its ERN.
+         */
+        [[nodiscard]]
+        Queue GetQueue(const std::string &nameOrErn) const;
+
+        /**
+         * @brief One message, by its id.
+         *
+         * @par
+         * The message id, not a receipt handle: a receipt handle belongs to one delivery and is
+         * void once that delivery's claim has expired, while the id names the message for as long
+         * as it exists - and asking about a message is something one does after the fact.
+         *
+         * @param messageId the message's id.
+         */
+        [[nodiscard]]
+        Message GetMessage(const std::string &messageId) const;
+
+        /**
          * @brief The ERN of the queue of this name, in the session's account and namespace.
          */
         [[nodiscard]]

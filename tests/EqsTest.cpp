@@ -144,6 +144,42 @@ BOOST_AUTO_TEST_SUITE(EqsQueueTest)
         BOOST_TEST(body.at("includeInternal").as_bool() == false);
     }
 
+    // One queue and one message are described exactly as a listing describes each of its own, so
+    // that a field added to the one is in the other by construction rather than by somebody
+    // remembering.
+    BOOST_AUTO_TEST_CASE(DescribesOneQueueAndOneMessageTheWayAListingDescribesEach) {
+        const EqsClient client(Test::AnsweringByAction({
+                {"get-queue", R"({"queue": {"name": "orders", "ern": "ern:queue/orders", "owner": "jens",
+                                            "available": 7, "delayed": 1, "invisible": 2, "visibility": 45,
+                                            "tags": {"team": "fulfilment"}}})"},
+                {"get-message", R"({"message": {"messageId": "m-1", "queueErn": "ern:queue/orders",
+                                                "body": "hello", "status": "AVAILABLE", "receivedCount": 2}})"},
+        }));
+
+        const auto queue = client.eqs.GetQueue("orders");
+        BOOST_TEST(queue.ern == "ern:queue/orders");
+        BOOST_TEST(queue.available == 7L);
+        BOOST_TEST(queue.invisible == 2L);
+        BOOST_TEST(lastBody(client.gateway).at("name").as_string() == "orders");
+
+        // A receipt handle is void once its delivery's claim expires; the id names the message for
+        // as long as it exists, which is what asking about one after the fact needs.
+        const auto message = client.eqs.GetMessage("m-1");
+        BOOST_TEST(message.body == "hello");
+        BOOST_TEST(message.receivedCount == 2L);
+        BOOST_TEST(lastBody(client.gateway).at("messageId").as_string() == "m-1");
+    }
+
+    // A name is resolved in the session's own namespace and an ERN is not, so which of the two was
+    // given has to reach the server as the field it is - the caller should not have to say.
+    BOOST_AUTO_TEST_CASE(AsksForAQueueByErnAsWellAsByName) {
+        const EqsClient client(Test::Answering(R"({"queue": {"name": "orders", "ern": "ern:queue/orders"}})"));
+
+        std::ignore = client.eqs.GetQueue(kQueue);
+
+        BOOST_TEST(lastBody(client.gateway).at("ern").as_string() == kQueue);
+    }
+
     BOOST_AUTO_TEST_CASE(AnswersWithTheErnTheMetadataAndTheTags) {
         const EqsClient client(Test::AnsweringByAction({
                 {"get-queue-ern", R"({"ern": ")" + kQueue + R"("})"},
