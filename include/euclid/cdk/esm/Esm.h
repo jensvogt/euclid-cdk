@@ -653,6 +653,29 @@ namespace Euclid::CDK::ESM {
          */
         long DownloadFile(const std::string &bucketErn, const std::string &key, const std::string &file, const DownloadOptions &options = {}) const;
 
+        /**
+         * @brief Throws away a multipart upload that will not be finished.
+         *
+         * @par
+         * Discards the parts staged under uploadId and - for a first upload - the object row that
+         * was seeded for bytes which never arrived. A re-upload's object row is left exactly as it
+         * is: that row is the previous version of the object, still published and still readable,
+         * and not this upload's to delete. AbortUploadResult::objectRemoved says which happened.
+         *
+         * @par
+         * UploadFile() does not need this - it completes or it fails within one call. What needs
+         * it is an upload nothing is driving any more: one whose client was killed, or one the API
+         * gateway abandoned. The id comes from a log or from whatever started the upload, which is
+         * why this takes one rather than being folded into the multipart helpers.
+         *
+         * @param uploadId the upload to discard, as create-upload returned it.
+         * @return what was discarded, and whether the object row went with it.
+         * @throws ServiceError if there is no such upload - which is also what a completed one
+         * answers, since completing it takes the staging with it.
+         */
+        [[nodiscard]]
+        AbortUploadResult AbortUpload(const std::string &uploadId) const;
+
         // -- monitoring -------------------------------------------------------------------------
 
         /**

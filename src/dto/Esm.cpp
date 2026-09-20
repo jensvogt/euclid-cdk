@@ -89,6 +89,16 @@ namespace Euclid::CDK::ESM {
         };
     }
 
+    AbortUploadResult ToAbortUploadResult(const boost::json::value &value) {
+        return {
+                .uploadId = Json::Text(value, "uploadId"),
+                .bucketErn = Json::Text(value, "bucketErn"),
+                .key = Json::Text(value, "key"),
+                .parts = Json::Number(value, "parts"),
+                .objectRemoved = Json::Flag(value, "objectRemoved"),
+        };
+    }
+
     PurgeBucketResult ToPurgeBucketResult(const boost::json::value &value) {
         // "count" when the purge ran inline, "objects" when it was taken on: the same figure at two
         // points in the same work, and count reads it either way rather than a zero that only means

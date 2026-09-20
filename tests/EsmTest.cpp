@@ -833,6 +833,28 @@ BOOST_AUTO_TEST_SUITE(EsmCallTest)
         BOOST_TEST(lastBody(client.gateway).at("async").as_bool() == true);
     }
 
+    BOOST_AUTO_TEST_CASE(AbortsAnUploadAndSaysWhatWasDiscarded) {
+        const EsmClient client(Test::Answering(
+                R"({"uploadId": "upload-1", "bucketErn": "ern:bucket/reports", "key": "onix/big.xml",
+                    "parts": 12, "objectRemoved": true})"));
+
+        const auto aborted = client.esm.AbortUpload("upload-1");
+
+        BOOST_TEST(aborted.key == "onix/big.xml");
+        BOOST_TEST(aborted.parts == 12L);
+        BOOST_TEST(aborted.objectRemoved);
+        BOOST_TEST(lastBody(client.gateway).at("uploadId").as_string() == "upload-1");
+    }
+
+    // The row a re-upload was writing over is the previous version - still published, still
+    // readable - so it is not removed, and the difference is what a caller cleaning up after a
+    // failure has to be able to see.
+    BOOST_AUTO_TEST_CASE(AnAbandonedReUploadLeavesThePublishedObject) {
+        const EsmClient client(Test::Answering(R"({"uploadId": "upload-1", "parts": 3, "objectRemoved": false})"));
+
+        BOOST_TEST(!client.esm.AbortUpload("upload-1").objectRemoved);
+    }
+
     BOOST_AUTO_TEST_CASE(PurgesABucketInTheBackground) {
         // Emptying a bucket can take minutes, so the server writes the work down as a job and
         // answers at once. The job is what makes the instance being stopped a pause: another picks

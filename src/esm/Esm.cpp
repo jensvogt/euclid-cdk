@@ -440,6 +440,10 @@ namespace Euclid::CDK::ESM {
         std::ignore = WithRetry("upload-part", [&] { return PostBytes("upload-part", data, headers, _transferTimeout); });
     }
 
+    AbortUploadResult Esm::AbortUpload(const std::string &uploadId) const {
+        return ToAbortUploadResult(Call("abort-upload", {{"uploadId", uploadId}}));
+    }
+
     StoredObject Esm::CompleteUpload(const std::string &uploadId, const UploadOptions &options) const {
         const auto headers = AttributeHeaders(options.attributes, options.systemAttributes);
         return ToStoredObject(CallWithRetry("complete-upload", {{"uploadId", uploadId}}, headers));

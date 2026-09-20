@@ -183,6 +183,33 @@ namespace Euclid::CDK::ESM {
      * "jobId" names the job doing it. That job outlives the instance that started it - one stopped
      * by the autoscaler, or lost to a crash, leaves a job another instance picks up and carries on.
      */
+    /**
+     * @brief What an abandoned upload was, and what became of the object it was writing.
+     */
+    struct EUCLID_CDK_API AbortUploadResult {
+
+        std::string uploadId;
+        std::string bucketErn;
+        std::string key;
+
+        /**
+         * @brief How many staged parts were thrown away.
+         */
+        long parts{};
+
+        /**
+         * @brief Whether the object row at that key went with the upload.
+         *
+         * @par
+         * True for a first upload, whose row described bytes that never arrived. False for a
+         * re-upload, where the row is the previous version - still published, still readable, and
+         * not this upload's to delete. Worth reading rather than assuming: "the upload is gone"
+         * and "the object is gone" are different outcomes, and a caller cleaning up after a
+         * failure needs to know which one they got.
+         */
+        bool objectRemoved{};
+    };
+
     struct EUCLID_CDK_API PurgeBucketResult {
         std::string ern;
         long count{};
@@ -342,6 +369,8 @@ namespace Euclid::CDK::ESM {
      */
     [[nodiscard]]
     EUCLID_CDK_API DeleteBucketResult ToDeleteBucketResult(const boost::json::value &value);
+
+    EUCLID_CDK_API AbortUploadResult ToAbortUploadResult(const boost::json::value &value);
 
     EUCLID_CDK_API PurgeBucketResult ToPurgeBucketResult(const boost::json::value &value);
 
