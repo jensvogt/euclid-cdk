@@ -175,15 +175,6 @@ namespace Euclid::CDK::ESM {
     };
 
     /**
-     * @brief A purged bucket, and how many objects went.
-     *
-     * @par
-     * "background" says the server answered before doing any of it, in which case "count" is how
-     * many objects the bucket held when the purge was taken on rather than how many have gone, and
-     * "jobId" names the job doing it. That job outlives the instance that started it - one stopped
-     * by the autoscaler, or lost to a crash, leaves a job another instance picks up and carries on.
-     */
-    /**
      * @brief What an abandoned upload was, and what became of the object it was writing.
      */
     struct EUCLID_CDK_API AbortUploadResult {
@@ -210,6 +201,15 @@ namespace Euclid::CDK::ESM {
         bool objectRemoved{};
     };
 
+    /**
+     * @brief A purged bucket, and how many objects went.
+     *
+     * @par
+     * "background" says the server answered before doing any of it, in which case "count" is how
+     * many objects the bucket held when the purge was taken on rather than how many have gone, and
+     * "jobId" names the job doing it. That job outlives the instance that started it - one stopped
+     * by the autoscaler, or lost to a crash, leaves a job another instance picks up and carries on.
+     */
     struct EUCLID_CDK_API PurgeBucketResult {
         std::string ern;
         long count{};
