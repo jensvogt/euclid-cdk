@@ -161,6 +161,19 @@ namespace Euclid::CDK::EAP {
      * "nameSpace" is a move rather than a field change, and the one way an application deployed
      * before applications carried a namespace can acquire one without being deleted and made again.
      */
+    /**
+     * @brief The instance bounds ScaleApplication() sets.
+     *
+     * @par
+     * -1 leaves a bound as it stands, which is what lets a ceiling be raised without touching
+     * the floor. The same number for both pins the pool at that size and leaves the autoscaler
+     * nothing to decide.
+     */
+    struct EUCLID_CDK_API ScaleApplicationOptions {
+        long minInstances = -1;
+        long maxInstances = -1;
+    };
+
     struct EUCLID_CDK_API UpdateApplicationOptions {
         std::optional<std::string> runtime;
         std::optional<std::string> artifact;
@@ -293,6 +306,71 @@ namespace Euclid::CDK::EAP {
          */
         [[nodiscard]]
         Application UpdateApplication(const std::string &applicationId, const UpdateApplicationOptions &options = {}) const;
+
+        /**
+         * @brief Defines the same application again in another namespace, leaving the original.
+         *
+         * @par
+         * The sibling of moving one with UpdateApplicationOptions::nameSpace, and the difference is
+         * the point: a move takes the definition with it, so what ran in the old namespace stops
+         * running there. A copy is how a build is promoted - development to integration,
+         * integration to production - while the namespace it came from goes on serving.
+         *
+         * @par
+         * The copy runs the same artifact, down to the checksum, so it is the same bytes rather
+         * than a rebuild that happens to share a version. It is given its own runtime name and its
+         * own technical principal with its own access key, both being installation-wide and
+         * unshareable, so revoking the copy's credentials leaves the original running. An
+         * application told to run as a named user keeps that user.
+         *
+         * @par
+         * What it may reach is re-resolved rather than copied: a bucket or queue ERN carries the
+         * namespace it was resolved in, so copying the list would point the new application at the
+         * old namespace's data. The same names are looked up in the target namespace, and one with
+         * no counterpart there fails the copy rather than quietly leaving the application with less
+         * access than the original.
+         *
+         * @par
+         * The copy is created stopped, whatever the original is doing.
+         *
+         * @param applicationId the application to copy, in the namespace this session works in
+         * @param targetNameSpace the namespace to copy it into; it has to exist already
+         * @param targetApplicationId the name the copy is defined under; the original's when empty,
+         * which is how an application is copied beside itself within one namespace
+         * @return the stored definition of the copy
+         */
+        [[nodiscard]]
+        Application CopyApplication(const std::string &applicationId, const std::string &targetNameSpace,
+                                    const std::string &targetApplicationId = "") const;
+
+
+        /**
+         * @brief Changes how many instances an application runs, without restarting the ones it has.
+         *
+         * @par
+         * UpdateApplication() can set the same two fields, but it writes the whole definition and
+         * stamps the modification date - and the manager restarts a pool whose application changed
+         * since it started it. Scaling that way stops every running instance and starts it again,
+         * which is the opposite of what asking for capacity means and worst at the moment it is
+         * asked for.
+         *
+         * @par
+         * What is set is the range the autoscaler works within, not a count: the manager scales
+         * toward it on its next reconcile. Nothing is started or stopped by this call.
+         *
+         * @par
+         * The bounds are checked against each other as they *will* stand rather than as they are,
+         * so raising only the floor is refused when it would pass the stored ceiling. A floor of
+         * zero is refused for its own reason - an application desired RUNNING with no instances
+         * reads everywhere as a pool that failed to start, and StopApplication() is how one is
+         * taken out of service.
+         *
+         * @param applicationId the application to scale
+         * @param options the bounds to set; -1 leaves one as it stands
+         * @return the stored definition after the change
+         */
+        [[nodiscard]]
+        Application ScaleApplication(const std::string &applicationId, const ScaleApplicationOptions &options = {}) const;
 
         /**
          * @brief Points an application at a new build of itself.

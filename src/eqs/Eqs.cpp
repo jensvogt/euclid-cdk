@@ -157,6 +157,33 @@ namespace Euclid::CDK::EQS {
         return TextOf("send-message", payload, "messageId");
     }
 
+    SendBatchResult Eqs::SendMessageBatch(const std::string &queueErn, const std::vector<SendMessageBatchEntry> &messages) const {
+
+        boost::json::array entries;
+        entries.reserve(messages.size());
+        for (const auto &message: messages) {
+            boost::json::object entry{{"body", message.body}};
+            if (!message.attributes.empty()) entry["attributes"] = COM::VariantMapToJson(message.attributes);
+            if (!message.systemAttributes.empty()) entry["systemAttributes"] = COM::VariantMapToJson(message.systemAttributes);
+            // Sent only when named: an empty priority is what tells the server to use the queue's
+            // own, and spelling it out here would override a queue configured otherwise.
+            if (!message.priority.empty()) entry["priority"] = message.priority;
+            entries.push_back(std::move(entry));
+        }
+
+        const auto document = Call("send-message-batch", {{"ern", queueErn}, {"messages", std::move(entries)}});
+
+        SendBatchResult result;
+        result.ern = Json::Text(document, "ern");
+        result.asked = Json::Number(document, "asked");
+        result.sent = Json::Number(document, "sent");
+        for (const auto &id: Json::Strings(document, "messageIds")) result.messageIds.push_back(id);
+        for (const auto &failure: Json::Documents(document, "failed")) {
+            result.failed.push_back({.index = Json::Number(failure, "index"), .reason = Json::Text(failure, "reason")});
+        }
+        return result;
+    }
+
     Page<Message> Eqs::ReceiveMessages(const std::string &queueErn, const ReceiveMessagesOptions &options) const {
 
         if (options.waitTime <= std::chrono::seconds::zero()) {

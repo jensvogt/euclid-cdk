@@ -99,6 +99,32 @@ namespace Euclid::CDK::EAP {
         return ApplicationOf("update-application", payload);
     }
 
+    Application Eap::CopyApplication(const std::string &applicationId, const std::string &targetNameSpace,
+                                     const std::string &targetApplicationId) const {
+
+        boost::json::object payload{
+                {"applicationId", applicationId},
+                {"targetNamespace", targetNameSpace},
+        };
+        // Sent only when named: the server reads an absent one as "the original's name", and an
+        // empty string is not the same thing.
+        if (!targetApplicationId.empty()) payload["targetApplicationId"] = targetApplicationId;
+
+        return ApplicationOf("copy-application", payload);
+    }
+
+    Application Eap::ScaleApplication(const std::string &applicationId, const ScaleApplicationOptions &options) const {
+
+        boost::json::object payload{{"applicationId", applicationId}};
+
+        // Sent only when asked for: the server reads an absent bound as "leave it as it stands",
+        // and -1 is this struct's way of saying the same thing.
+        if (options.minInstances >= 0) payload["minInstances"] = options.minInstances;
+        if (options.maxInstances >= 0) payload["maxInstances"] = options.maxInstances;
+
+        return ApplicationOf("scale-application", payload);
+    }
+
     Application Eap::RedeployApplication(const std::string &applicationId, const std::string &artifact, const std::string &version) const {
 
         boost::json::object payload{{"applicationId", applicationId}};

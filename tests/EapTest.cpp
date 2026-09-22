@@ -134,6 +134,52 @@ BOOST_AUTO_TEST_SUITE(EapDeploymentTest)
     }
 
     // The server distinguishes a field being sent from one that is not, rather than one value from
+    // A copy names where it is going, and says nothing about the name unless it is being changed:
+    // the server reads an absent targetApplicationId as "the original's name", so sending an empty
+    // one would be asking for an application with no name at all.
+    BOOST_AUTO_TEST_CASE(ACopyNamesTheTargetNamespace) {
+        const EapClient client(Test::Answering(boost::json::serialize(application())));
+
+        std::ignore = client.eap.CopyApplication("order-service", "production");
+
+        auto body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("applicationId").as_string() == "order-service");
+        BOOST_TEST(body.at("targetNamespace").as_string() == "production");
+        BOOST_TEST(!body.contains("targetApplicationId"));
+
+        std::ignore = client.eap.CopyApplication("order-service", "development", "order-service-next");
+
+        body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("targetNamespace").as_string() == "development");
+        BOOST_TEST(body.at("targetApplicationId").as_string() == "order-service-next");
+    }
+
+    // A bound left at -1 is not sent at all: the server reads an absent one as "leave it as it
+    // stands", which is what lets a ceiling be raised without disturbing the floor under it.
+    BOOST_AUTO_TEST_CASE(ScalingSendsOnlyTheBoundItWasGiven) {
+        const EapClient client(Test::Answering(boost::json::serialize(application())));
+
+        std::ignore = client.eap.ScaleApplication("order-service", {.maxInstances = 16});
+
+        auto body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("applicationId").as_string() == "order-service");
+        BOOST_TEST(body.at("maxInstances").as_int64() == 16);
+        BOOST_TEST(!body.contains("minInstances"));
+
+        std::ignore = client.eap.ScaleApplication("order-service", {.minInstances = 4});
+
+        body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("minInstances").as_int64() == 4);
+        BOOST_TEST(!body.contains("maxInstances"));
+
+        // Both together pins the pool, which is a normal thing to ask for.
+        std::ignore = client.eap.ScaleApplication("order-service", {.minInstances = 2, .maxInstances = 2});
+
+        body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("minInstances").as_int64() == 2);
+        BOOST_TEST(body.at("maxInstances").as_int64() == 2);
+    }
+
     // another - so an update says only what it means to change.
     BOOST_AUTO_TEST_CASE(SendsOnlyWhatAnUpdateNames) {
         const EapClient client(Test::Answering(boost::json::serialize(application())));

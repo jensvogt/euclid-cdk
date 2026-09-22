@@ -88,6 +88,40 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(EqsQueueTest)
 
+    // A batch names the queue once and carries the messages; a rejected one is reported against its
+    // position and the rest still go. The two things worth pinning are that an unset field is left
+    // out of the entry entirely - an empty priority would override a queue configured otherwise -
+    // and that the failure's index survives the round trip, since that index is the only thing that
+    // maps a rejection back to the message the caller sent.
+    BOOST_AUTO_TEST_CASE(ABatchSendsManyAndNamesWhatItWouldNot) {
+        const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders", "asked": 3, "sent": 2,
+                "messageIds": ["id-0", "id-2"],
+                "failed": [{"index": 1, "reason": "message is 2048 bytes, and this queue accepts 1024"}]})"));
+
+        const auto result = client.eqs.SendMessageBatch(kQueue, {
+                                                                        {.body = "first"},
+                                                                        {.body = "second"},
+                                                                        {.body = "third", .priority = "HIGH"},
+                                                                });
+
+        BOOST_TEST(result.asked == 3);
+        BOOST_TEST(result.sent == 2);
+        BOOST_REQUIRE(result.messageIds.size() == 2U);
+        BOOST_TEST(result.messageIds[0] == "id-0");
+        BOOST_REQUIRE(result.failed.size() == 1U);
+        BOOST_TEST(result.failed[0].index == 1);
+        BOOST_TEST(result.failed[0].reason.find("2048") != std::string::npos);
+
+        const auto body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("ern").as_string() == kQueue);
+        const auto &entries = body.at("messages").as_array();
+        BOOST_REQUIRE(entries.size() == 3U);
+        BOOST_TEST(entries[0].as_object().at("body").as_string() == "first");
+        BOOST_TEST(!entries[0].as_object().contains("priority"));
+        BOOST_TEST(!entries[0].as_object().contains("attributes"));
+        BOOST_TEST(entries[2].as_object().at("priority").as_string() == "HIGH");
+    }
+
     BOOST_AUTO_TEST_CASE(CreatesAndListsQueues) {
         const auto queues = boost::json::serialize(boost::json::object{
                 {"total", 2},

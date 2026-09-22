@@ -156,6 +156,68 @@ namespace Euclid::CDK::EQS {
     /**
      * @brief What a message carries besides its body.
      */
+    /**
+     * @brief One message within a batch - the same fields a single send takes, minus the queue.
+     *
+     * @par
+     * A batch names the queue once, so every message in one goes to the same queue.
+     */
+    struct EUCLID_CDK_API SendMessageBatchEntry {
+
+        /**
+         * @brief The message body.
+         */
+        std::string body;
+
+        /**
+         * @brief The sender's own attributes, which come back on the received message.
+         */
+        COM::VariantMap attributes;
+
+        /**
+         * @brief euclid's envelope, carried across every hop.
+         */
+        COM::VariantMap systemAttributes;
+
+        /**
+         * @brief "LOW", "MEDIUM" or "HIGH"; empty takes the queue's own.
+         */
+        std::string priority;
+    };
+
+    /**
+     * @brief One message a batch would not send, and why.
+     *
+     * @par
+     * The index is where the message sat in the list that was sent. The server minted nothing for a
+     * message it did not accept, so the position is the only thing the two sides share.
+     */
+    struct EUCLID_CDK_API SendBatchFailure {
+        long index{};
+        std::string reason;
+    };
+
+    /**
+     * @brief What a SendMessageBatch() did.
+     *
+     * @par
+     * Counts, the ids of what went in request order, and the failures named one by one. `asked`
+     * always equals `sent` plus `failed.size()`.
+     *
+     * @par
+     * The failure list is what differs from every other multi-item call in euclid, which only
+     * counts. A delete that skipped a key removed something already gone; a send that skipped a
+     * message dropped it, and a producer holding "97 of 100" cannot act on that without knowing
+     * which three to send again.
+     */
+    struct EUCLID_CDK_API SendBatchResult {
+        std::string ern;
+        long asked{};
+        long sent{};
+        std::vector<std::string> messageIds;
+        std::vector<SendBatchFailure> failed;
+    };
+
     struct EUCLID_CDK_API SendMessageOptions {
 
         /**
@@ -463,6 +525,34 @@ namespace Euclid::CDK::EQS {
          */
         [[nodiscard]]
         std::string SendMessage(const std::string &queueErn, const std::string &body, const SendMessageOptions &options = {}) const;
+
+        /**
+         * @brief Sends several messages to one queue in a single call.
+         *
+         * @par
+         * The saving over calling SendMessage() in a loop is mostly in the database rather than the
+         * round trips: the whole batch is written in one insert, and the queue's counters are
+         * adjusted once instead of once per message.
+         *
+         * @par
+         * A message that cannot be sent does not stop the others. The result says how many were
+         * asked for and how many went, lists the ids of those that went in request order, and names
+         * each rejection by its position in `messages` - so a producer retries exactly those rather
+         * than the whole batch and duplicates everything else.
+         *
+         * @par
+         * Every message being rejected still returns rather than throwing: the request was well
+         * formed and has been answered with a reason for each. Check `sent`, not the absence of an
+         * exception. An empty batch, or one over the installation's
+         * euclid.modules.eqs.max-batch-size, is refused with HTTP 400 - those are mistakes in the
+         * request rather than in a message, so there is no partial outcome to report.
+         *
+         * @param queueErn the queue ERN, or a bare queue name
+         * @param messages the messages, in the order they are to be sent
+         * @return what was sent, and what was not
+         */
+        [[nodiscard]]
+        SendBatchResult SendMessageBatch(const std::string &queueErn, const std::vector<SendMessageBatchEntry> &messages) const;
 
         /**
          * @brief Takes up to options.maxMessages messages off a queue, waiting up to
