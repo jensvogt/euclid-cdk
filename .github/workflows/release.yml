@@ -5,13 +5,26 @@ name: release
 # says without touching a release, which is how this workflow is tried out - and what the first
 # release after it lands needs, since a workflow only runs for a tag if it already existed at that
 # tag's commit.
+#
+# It also runs on main, where it attaches nothing: that run exists to fill the dependency cache. A
+# cache written while building a tag is scoped to that tag and invisible to the next one, so every
+# release was rebuilding Boost from source - a quarter of an hour of a release spent on dependencies
+# that had not changed. Caches written on the default branch are the ones every other ref can read,
+# so main is the only place this cache can usefully be filled.
 on:
   push:
+    branches: [ main ]
     tags: [ "v*" ]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# One run per ref. A cache-filling run on main that a later push has already overtaken is building
+# dependencies nothing is waiting for; a tag run is never cancelled, because its ref is its own.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
   package:
@@ -124,7 +137,12 @@ jobs:
             cmake -E tar czf "../${EUCLID_CDK_ARCHIVE}.tar.gz" "${EUCLID_CDK_ARCHIVE}"
           fi
 
+      # Only for a tag, since only a tag has a release to attach them to. A main run has already
+      # done its job by this point - the cache is written whether or not the archive is kept - and
+      # staging and archiving are still worth doing there, because an install tree that stopped
+      # building is better found on the commit that broke it than on the tag that wanted to ship it.
       - name: Upload
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.EUCLID_CDK_ARCHIVE }}
