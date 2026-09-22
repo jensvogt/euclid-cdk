@@ -12,6 +12,8 @@ namespace Euclid::CDK::EAG {
 
     bool Route::IsAuthenticated() const { return !authentication.empty() && authentication != AuthNone; }
 
+    bool Listener::IsHttps() const { return protocol == ProtocolHttps; }
+
     UploadSpec ToUploadSpec(const boost::json::value &value) {
         return {
                 .bucket = Json::Text(value, "bucket"),
@@ -46,6 +48,41 @@ namespace Euclid::CDK::EAG {
                 .created = Json::Text(value, "created"),
                 .modified = Json::Text(value, "modified"),
         };
+    }
+
+    Listener ToListener(const boost::json::value &value) {
+        return {
+                .nameSpace = Json::Text(value, "namespace"),
+                .port = Json::Number(value, "port"),
+                .protocol = Json::Text(value, "protocol"),
+                .serving = Json::Flag(value, "serving"),
+                .certificate = Json::Text(value, "certificate"),
+                .certificateConfigured = Json::Text(value, "certificateConfigured"),
+                .certificateFound = Json::Flag(value, "certificateFound"),
+                .certificateErn = Json::Text(value, "certificateErn"),
+                .certificateSubject = Json::Text(value, "certificateSubject"),
+                .certificateIssuer = Json::Text(value, "certificateIssuer"),
+                .certificateSerialNumber = Json::Text(value, "certificateSerialNumber"),
+                .certificateFingerprint = Json::Text(value, "certificateFingerprint"),
+                .certificateSubjectAltNames = Json::Strings(value, "certificateSubjectAltNames"),
+                .certificateGenerated = Json::Flag(value, "certificateGenerated"),
+                .certificateNotBefore = Json::Text(value, "certificateNotBefore"),
+                .certificateNotAfter = Json::Text(value, "certificateNotAfter"),
+                .certificateExpired = Json::Flag(value, "certificateExpired"),
+        };
+    }
+
+    ListenersResult ToListenersResult(const boost::json::value &value) {
+
+        ListenersResult result{
+                .listeners = {},
+                .total = Json::Number(value, "total"),
+                .serving = Json::Flag(value, "serving"),
+        };
+        for (const auto &document: Json::Documents(value, "listeners")) {
+            result.listeners.push_back(ToListener(document));
+        }
+        return result;
     }
 
 }// namespace Euclid::CDK::EAG

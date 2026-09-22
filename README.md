@@ -4,13 +4,15 @@ The C++ SDK for a [euclid](https://github.com/jensvogt/euclid) server, alongside
 euclid-pdk (Python) and euclid-ndk (Node.js).
 
 It covers **EAM** — euclid's access management module — which is where a login comes from, the two
-**request-signing schemes** a euclid client authenticates with, and nine modules reached through the
+**request-signing schemes** a euclid client authenticates with, and every module reached through the
 session a login answers with: **ESM** (storage), **EQS** (queues), **ENS** (notifications), **EKM**
 (keys and certificates), **EKV** (tables of items), **ESS** (secrets), **ETS** (the FTP and SFTP
 endpoints onto a bucket), **EMO** (monitoring, including a metrics registry an application records
-into) and **EAP** (the applications euclid runs). Only EAG is left; until it lands,
+into), **EAP** (the applications euclid runs) and **EAG** (the API gateway that publishes them).
+
+That is all of euclid. For an action this SDK does not name — one newer than the release you have —
 `CDK::ModuleClient` is what a module client is built out of, and `EAM::Session::NewRequest()` and
-`CDK::HttpClient` reach any action this SDK does not name.
+`CDK::HttpClient` reach any action at all.
 
 Both a **shared** and a **static** library are built: `libeuclid-cdk.so` and `libeuclid-cdk.a`.
 
@@ -284,6 +286,52 @@ application id is always sent, even though the server can infer it from a caller
 `app-<something>` — that inference only holds while an application's id and the identity it runs as
 agree, and when they didn't, every report went to a pool that did not exist, answered `200`, and
 left the autoscaler blind. Everything else in this module is administrator-only.
+
+### The API gateway
+
+`EAG::Eag` publishes a path to the outside world and says what answers it. The gateway routes by
+configuration rather than by convention, so the name of whatever serves a path never appears in the
+URL a caller asks for — which is what lets an application be renamed, replaced or split across
+several routes without anything calling it having to change.
+
+```cpp
+const EAG::Eag eag(session);
+
+eag.CreateRoute("orders", "/orders", "order-service",
+                {.methods = {std::string(EAG::MethodGet)}, .authentication = std::string(EAG::AuthEuclid)});
+```
+
+A route names exactly one of three things, and which one is its whole character — so there is a call
+for each rather than one call with fields that contradict each other:
+
+| call | what answers the path |
+|---|---|
+| `CreateRoute()` | an application EAP runs |
+| `CreateModuleRoute()` | euclid itself — `("login", "/euclid/login", "eam", "login")` is how a browser logs in without a second origin and CORS between them |
+| `CreateUploadRoute()` | a bucket: the body is streamed into ESM and nothing is forwarded |
+
+Paths match as a prefix, because a REST resource is a tree, and the longer of two matching routes
+wins — so a specific route can be carved out of a general one later without either being rewritten.
+Two routes may share a path when their methods don't overlap, which is how reads and writes of one
+resource go to different applications; an overlap is refused with `409` rather than decided by sort
+order.
+
+One action per module route, deliberately: a route for `/euclid` that passed its remaining segments
+through as actions would publish every action the module has, including the ones that delete users.
+
+`UpdateRoute()` takes `std::optional` fields, and `SetRouteActive()` is how something exposed by
+mistake is withdrawn in a hurry and put back knowing it returns exactly as it was — an inactive route
+still holds its path, so nothing else can claim it meanwhile. `ListListeners()` reports the ports
+themselves: they are written in the installation's configuration rather than created here, so what it
+answers is what the gateway is *doing* — `serving` false with listeners configured is a port that was
+taken or a certificate that could not be loaded.
+
+Two things this client does by leaving fields out rather than sending them: an unnamed namespace,
+region or authentication is **absent** from the request, because the server falls back to its default
+only for a field that is not there at all — an empty namespace would publish the route at the account
+root instead of in the session's. And an upload route defaults to `AuthEuclid` where a proxy route
+defaults to none, because an unauthenticated upload route is a public write endpoint into somebody's
+bucket. Every action here is administrator-only.
 
 ### Transfer servers
 

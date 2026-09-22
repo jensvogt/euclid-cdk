@@ -181,6 +181,106 @@ namespace Euclid::CDK::EAG {
     };
 
     /**
+     * @brief One port the gateway serves, and the certificate it serves it with.
+     *
+     * @par
+     * A listener is configuration rather than a resource: it is written in the installation's
+     * configuration file and read when EAG starts, which is why it can be listed and not created.
+     * One port per namespace, or one unscoped port carrying everything.
+     *
+     * @par
+     * Every certificate field is empty on an HTTP listener, which has no certificate to describe.
+     */
+    struct EUCLID_CDK_API Listener {
+
+        /**
+         * @brief The namespace this port carries, or empty for one that carries every route.
+         */
+        std::string nameSpace;
+        long port{};
+
+        /**
+         * @brief ProtocolHttp or ProtocolHttps.
+         */
+        std::string protocol;
+
+        /**
+         * @brief Whether the gateway's ports are actually bound.
+         *
+         * @par
+         * The same value on every listener, because the proxy binds all of them or none. A listener
+         * that is listed and not serving is one whose port was taken or whose certificate could not
+         * be loaded - it is listed precisely because that is the one somebody is looking for.
+         */
+        bool serving{};
+
+        /**
+         * @brief The name of the certificate this listener actually serves.
+         *
+         * @par
+         * Not the one it named: naming none means the conventional certificate for its namespace,
+         * and reporting that as empty would send somebody looking for a certificate that is there
+         * under a name nothing told them.
+         */
+        std::string certificate;
+
+        /**
+         * @brief What the configuration wrote, empty when it named none - which is how "this
+         * listener names its certificate" and "this listener takes the conventional one" are told
+         * apart.
+         */
+        std::string certificateConfigured;
+
+        /**
+         * @brief Whether that certificate is in EKM.
+         *
+         * @par
+         * False on an HTTPS listener means the port never came up: the certificate is generated
+         * when it starts. Everything below is empty unless this is true.
+         */
+        bool certificateFound{};
+        std::string certificateErn;
+        std::string certificateSubject;
+        std::string certificateIssuer;
+        std::string certificateSerialNumber;
+        std::string certificateFingerprint;
+        std::vector<std::string> certificateSubjectAltNames;
+
+        /**
+         * @brief Whether euclid minted this itself because the listener needed something to start
+         * with.
+         *
+         * @par
+         * Worth reading: a caller rejects a self-signed certificate until it has been given it, so
+         * which of the two this is decides whether the port works for anybody who was not told
+         * about it.
+         */
+        bool certificateGenerated{};
+        std::string certificateNotBefore;
+        std::string certificateNotAfter;
+        bool certificateExpired{};
+
+        /**
+         * @brief Whether this listener speaks TLS.
+         */
+        [[nodiscard]]
+        bool IsHttps() const;
+    };
+
+    /**
+     * @brief The gateway's ports, and whether any of them are bound.
+     */
+    struct EUCLID_CDK_API ListenersResult {
+        std::vector<Listener> listeners;
+        long total{};
+
+        /**
+         * @brief Whether the proxy is serving at all - the same value each listener carries.
+         */
+        bool serving{};
+    };
+
+    /**
      * @brief Reads an upload specification.
      */
     [[nodiscard]]
@@ -191,5 +291,17 @@ namespace Euclid::CDK::EAG {
      */
     [[nodiscard]]
     EUCLID_CDK_API Route ToRoute(const boost::json::value &value);
+
+    /**
+     * @brief Reads one listener.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API Listener ToListener(const boost::json::value &value);
+
+    /**
+     * @brief Reads a list-listeners response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API ListenersResult ToListenersResult(const boost::json::value &value);
 
 }// namespace Euclid::CDK::EAG
