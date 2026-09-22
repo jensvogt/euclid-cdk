@@ -154,9 +154,6 @@ namespace Euclid::CDK::EQS {
     };
 
     /**
-     * @brief What a message carries besides its body.
-     */
-    /**
      * @brief One message within a batch - the same fields a single send takes, minus the queue.
      *
      * @par
@@ -218,6 +215,9 @@ namespace Euclid::CDK::EQS {
         std::vector<SendBatchFailure> failed;
     };
 
+    /**
+     * @brief What a message carries besides its body.
+     */
     struct EUCLID_CDK_API SendMessageOptions {
 
         /**

@@ -143,6 +143,19 @@ namespace Euclid::CDK::EAP {
     };
 
     /**
+     * @brief The instance bounds ScaleApplication() sets.
+     *
+     * @par
+     * -1 leaves a bound as it stands, which is what lets a ceiling be raised without touching
+     * the floor. The same number for both pins the pool at that size and leaves the autoscaler
+     * nothing to decide.
+     */
+    struct EUCLID_CDK_API ScaleApplicationOptions {
+        long minInstances = -1;
+        long maxInstances = -1;
+    };
+
+    /**
      * @brief What an update changes - and only what it names.
      *
      * @par
@@ -161,19 +174,6 @@ namespace Euclid::CDK::EAP {
      * "nameSpace" is a move rather than a field change, and the one way an application deployed
      * before applications carried a namespace can acquire one without being deleted and made again.
      */
-    /**
-     * @brief The instance bounds ScaleApplication() sets.
-     *
-     * @par
-     * -1 leaves a bound as it stands, which is what lets a ceiling be raised without touching
-     * the floor. The same number for both pins the pool at that size and leaves the autoscaler
-     * nothing to decide.
-     */
-    struct EUCLID_CDK_API ScaleApplicationOptions {
-        long minInstances = -1;
-        long maxInstances = -1;
-    };
-
     struct EUCLID_CDK_API UpdateApplicationOptions {
         std::optional<std::string> runtime;
         std::optional<std::string> artifact;
