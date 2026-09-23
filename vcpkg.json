@@ -22,5 +22,5 @@
   "default-features": [
     "tests"
   ],
-  "builtin-baseline": "94a541197763a4f449a1b91478df48c0584a6256"
+  "builtin-baseline": "b61d33065508ba0d5e393206abb3cb2366299699"
 }
