@@ -300,6 +300,25 @@ namespace Euclid::CDK::ESM {
         std::string GetBucketErn(const std::string &name) const;
 
         /**
+         * @brief Whether a bucket exists.
+         *
+         * @par
+         * Three answers, not two. true and false are the ones a caller expects; the third is a
+         * ServiceError, and it is the one that matters. An expired session, an unreachable gateway
+         * or a refused permission is not the same as "not there", and returning false for them
+         * would have callers deleting and recreating things over an outage. Only HTTP 404 - the
+         * answer that actually says it is absent - becomes false; everything else is rethrown.
+         *
+         * @par
+         * Asks about the bucket, not about anything in it: an empty bucket exists.
+         *
+         * @param name name of the bucket, resolved in the session's account and namespace.
+         * @throws ServiceError if the question could not be answered.
+         */
+        [[nodiscard]]
+        bool ExistsBucket(const std::string &name) const;
+
+        /**
          * @brief How many bytes a bucket holds.
          */
         [[nodiscard]]

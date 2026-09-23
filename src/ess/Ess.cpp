@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// C++ includes
+#include <algorithm>
+#include <ranges>
+
 // Euclid includes
 #include <euclid/cdk/Errors.h>
 #include <euclid/cdk/Json.h>
@@ -30,6 +34,16 @@ namespace Euclid::CDK::ESS {
 
     Page<Secret> Ess::ListSecrets(const ListOptions &options) const {
         return ToPage<Secret>(Call("list-secrets", ListPayload(options, "name")), "secrets", ToSecret);
+    }
+
+    bool Ess::ExistsSecret(const std::string &name) const {
+
+        ListOptions options;
+        options.prefix = name;
+        options.pageSize = 0;
+
+        const auto matching = ListSecrets(options);
+        return std::ranges::any_of(matching.items, [&name](const Secret &secret) { return secret.name == name; });
     }
 
     Secret Ess::RotateSecret(const std::string &name, const std::string &value) const {

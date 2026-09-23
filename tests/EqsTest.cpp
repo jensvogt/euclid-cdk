@@ -602,4 +602,40 @@ BOOST_AUTO_TEST_SUITE(EqsTransportTest)
         BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "get-metadata");
     }
 
+    // ── Existence ───────────────────────────────────────────────────────────
+
+    BOOST_AUTO_TEST_CASE(ExistsQueueAnswersYesAndNo) {
+        const EqsClient present(Test::Answering(R"({"ern": "ern:queue/orders"})"));
+        BOOST_TEST(present.eqs.ExistsQueue("orders"));
+
+        const FakeGateway absent(Test::Authenticated([](const Request &) {
+            return FakeGateway::Json(404, R"({"error": "Queue not found, name: nope"})");
+        }));
+        const auto session = Test::Builder(absent).Login();
+        const EQS::Eqs eqs(session);
+        BOOST_TEST(!eqs.ExistsQueue("nope"));
+    }
+
+    // The third answer, and the reason this is not a two-state method. A caller that got false from
+    // an expired session would delete and recreate a queue that was there all along, so anything
+    // that is not a 404 has to come out as a throw rather than as an answer.
+    BOOST_AUTO_TEST_CASE(ExistsQueueThrowsWhenItCouldNotTell) {
+        for (const int status: {401, 403, 500}) {
+            BOOST_TEST_CONTEXT("status " << status) {
+                const FakeGateway gateway(Test::Authenticated([status](const Request &) {
+                    return FakeGateway::Json(status, R"({"error": "not today"})");
+                }));
+                const auto session = Test::Builder(gateway).Login();
+                const EQS::Eqs eqs(session);
+
+                try {
+                    std::ignore = eqs.ExistsQueue("orders");
+                    BOOST_FAIL("expected a ServiceError rather than an answer");
+                } catch (const ServiceError &ex) {
+                    BOOST_TEST(ex.Status() == status);
+                }
+            }
+        }
+    }
+
 BOOST_AUTO_TEST_SUITE_END()

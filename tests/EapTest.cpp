@@ -248,6 +248,21 @@ BOOST_AUTO_TEST_SUITE(EapDeploymentTest)
         BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "delete-application");
     }
 
+    BOOST_AUTO_TEST_CASE(TheRuntimeConstantsAreTheStringsEapAccepts) {
+
+        // Spelled by hand rather than derived, because the server matches them exactly and refuses
+        // anything else with a 400. A constant that drifted to "JAVA-21" would still compile and
+        // read perfectly at the call site, and fail only against a running installation.
+        BOOST_TEST(EAP::RuntimeJava == "JAVA");
+        BOOST_TEST(EAP::RuntimeJava21 == "JAVA21");
+        BOOST_TEST(EAP::RuntimeJava25 == "JAVA25");
+
+        // Three distinct runtimes, not one with aliases: a jar built for 25 does not start on 21,
+        // so asking for one and getting the other is the failure these exist to prevent.
+        BOOST_TEST(EAP::RuntimeJava != EAP::RuntimeJava21);
+        BOOST_TEST(EAP::RuntimeJava21 != EAP::RuntimeJava25);
+    }
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(EapRunningTest)

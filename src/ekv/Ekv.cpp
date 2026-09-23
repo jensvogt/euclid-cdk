@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// C++ includes
+#include <tuple>
+
 // Euclid includes
 #include <euclid/cdk/Errors.h>
 #include <euclid/cdk/Json.h>
@@ -33,6 +36,16 @@ namespace Euclid::CDK::EKV {
 
     TableDescription Ekv::GetTable(const std::string &name) const {
         return ToTableDescription(Call("get-table", {{"name", name}}));
+    }
+
+    bool Ekv::ExistsTable(const std::string &name) const {
+        try {
+            std::ignore = GetTable(name);
+        } catch (const ServiceError &error) {
+            if (error.Status() == 404) return false;
+            throw;
+        }
+        return true;
     }
 
     TableDescription Ekv::DescribeTable(const std::string &name) const {

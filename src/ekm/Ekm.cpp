@@ -56,6 +56,16 @@ namespace Euclid::CDK::EKM {
         return ToKey(Json::Child(Call("get-key", payload), "key"));
     }
 
+    bool Ekm::ExistsKey(const std::string &nameOrErn) const {
+        try {
+            std::ignore = GetKey(nameOrErn);
+        } catch (const ServiceError &error) {
+            if (error.Status() == 404) return false;
+            throw;
+        }
+        return true;
+    }
+
     DeleteKeyResult Ekm::DeleteKey(const std::string &keyId, const long pendingWindowInDays) const {
         const boost::json::object payload{{"keyId", keyId}, {"pendingWindowInDays", pendingWindowInDays}};
         return ToDeleteKeyResult(Call("delete-key", payload));

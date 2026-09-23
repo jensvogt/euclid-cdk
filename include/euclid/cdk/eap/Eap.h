@@ -29,11 +29,19 @@ namespace Euclid::CDK::EAP {
      * @brief What an artifact is handed to.
      *
      * @par
-     * Matched exactly, in upper case, and anything else is refused with HTTP 400. A runtime is a
-     * category rather than a version, so a JDK 17 and a JDK 25 application are both RuntimeJava and
-     * it is the command or the PATH that decides which one runs.
+     * Matched exactly, in upper case, and anything else is refused with HTTP 400 - "JAVA21" is a
+     * runtime, "java21" and "JAVA 21" are typos.
+     *
+     * @par
+     * RuntimeJava is whichever java the host calls java, which is what every application deployed
+     * before the versioned ones said. RuntimeJava21 and RuntimeJava25 name a version and are
+     * started with the executable that host has configured for it - a jar built for 25 does not
+     * start on 21, and leaving it to whichever java resolved first made the version an accident of
+     * the manager's PATH.
      */
     inline constexpr std::string_view RuntimeJava = "JAVA";
+    inline constexpr std::string_view RuntimeJava21 = "JAVA21";
+    inline constexpr std::string_view RuntimeJava25 = "JAVA25";
     inline constexpr std::string_view RuntimePython = "PYTHON";
     inline constexpr std::string_view RuntimeNodeJs = "NODEJS";
 

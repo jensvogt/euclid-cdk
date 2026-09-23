@@ -74,6 +74,16 @@ namespace Euclid::CDK::EQS {
         return TextOf("get-queue-ern", {{"name", name}}, "ern");
     }
 
+    bool Eqs::ExistsQueue(const std::string &name) const {
+        try {
+            std::ignore = GetQueueErn(name);
+        } catch (const ServiceError &error) {
+            if (error.Status() == 404) return false;
+            throw;
+        }
+        return true;
+    }
+
     QueueMetadata Eqs::GetQueueMetadata(const std::string &ern) const {
         return ToQueueMetadata(Call("get-queue-metadata", {{"ern", ern}}));
     }

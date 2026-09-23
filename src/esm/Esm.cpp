@@ -195,6 +195,16 @@ namespace Euclid::CDK::ESM {
         return TextOf("get-bucket-ern", {{"name", name}}, "ern");
     }
 
+    bool Esm::ExistsBucket(const std::string &name) const {
+        try {
+            std::ignore = GetBucketErn(name);
+        } catch (const ServiceError &error) {
+            if (error.Status() == 404) return false;
+            throw;
+        }
+        return true;
+    }
+
     long Esm::GetBucketSize(const std::string &ern) const {
         return NumberOf("get-bucket-size", {{"ern", ern}}, "size");
     }

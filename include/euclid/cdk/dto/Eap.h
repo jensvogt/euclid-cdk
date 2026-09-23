@@ -84,7 +84,8 @@ namespace Euclid::CDK::EAP {
         std::string region;
 
         /**
-         * @brief "JAVA", "PYTHON", "NODEJS" or "BINARY" - see EAP::RuntimeJava and its siblings.
+         * @brief "JAVA", "JAVA21", "JAVA25", "PYTHON", "NODEJS" or "BINARY" - see EAP::RuntimeJava
+         * and its siblings.
          */
         std::string runtime;
 

@@ -43,6 +43,16 @@ namespace Euclid::CDK::ENS {
         return TextOf("get-topic-ern", {{"name", name}}, "ern");
     }
 
+    bool Ens::ExistsTopic(const std::string &name) const {
+        try {
+            std::ignore = GetTopicErn(name);
+        } catch (const ServiceError &error) {
+            if (error.Status() == 404) return false;
+            throw;
+        }
+        return true;
+    }
+
     TopicMetadata Ens::GetTopicMetadata(const std::string &ern) const {
         return ToTopicMetadata(Call("get-topic-metadata", {{"ern", ern}}));
     }

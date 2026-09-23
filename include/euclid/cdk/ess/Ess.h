@@ -136,6 +136,34 @@ namespace Euclid::CDK::ESS {
         Page<Secret> ListSecrets(const ListOptions &options = {}) const;
 
         /**
+         * @brief Whether a secret exists.
+         *
+         * @par
+         * Three answers, not two. true and false are the ones a caller expects; the third is a
+         * ServiceError, and it is the one that matters. An expired session, an unreachable gateway
+         * or a refused permission is not the same as "not there", and returning false for them
+         * would have callers recreating secrets over an outage.
+         *
+         * @par
+         * Asks ListSecrets() rather than GetSecret(), deliberately. GetSecret() answers with the
+         * decrypted value, so asking it whether a secret exists would mean holding ess:get-secret -
+         * permission to read the password rather than to know the name is taken - decrypting it,
+         * carrying the plaintext back across the wire, and leaving an audit entry indistinguishable
+         * from somebody actually reading it. None of that is any part of the question. This needs
+         * ess:list-secrets and never touches the value.
+         *
+         * @par
+         * The whole matching page is asked for rather than the default ten, because the prefix also
+         * matches longer names - "db-password" matches "db-password-old" too - and a name could
+         * otherwise be called absent because longer ones crowded it off page one.
+         *
+         * @param name name of the secret, matched exactly.
+         * @throws ServiceError if the question could not be answered.
+         */
+        [[nodiscard]]
+        bool ExistsSecret(const std::string &name) const;
+
+        /**
          * @brief Replaces a secret's value, which is what a rotation is and what bumps its version.
          */
         [[nodiscard]]

@@ -205,6 +205,26 @@ namespace Euclid::CDK::EKM {
         Key GetKey(const std::string &nameOrErn) const;
 
         /**
+         * @brief Whether a key exists.
+         *
+         * @par
+         * Three answers, not two. true and false are the ones a caller expects; the third is a
+         * ServiceError, and it is the one that matters. An expired session, an unreachable gateway
+         * or a refused permission is not the same as "not there", and returning false for them
+         * would have callers deleting and recreating things over an outage. Only HTTP 404 - the
+         * answer that actually says it is absent - becomes false; everything else is rethrown.
+         *
+         * @par
+         * Reads the key's description, never its material. A revoked or pending-deletion key still
+         * exists and this returns true for it; GetKey() carries the status that tells those apart.
+         *
+         * @param nameOrErn name of the key in the session's account and namespace, or a full ERN.
+         * @throws ServiceError if the question could not be answered.
+         */
+        [[nodiscard]]
+        bool ExistsKey(const std::string &nameOrErn) const;
+
+        /**
          * @brief Schedules a key for deletion, and answers with the date it goes for good.
          *
          * @par
