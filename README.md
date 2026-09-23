@@ -73,6 +73,27 @@ The OIDC and SAML browser flows are the one part of EAM it does not wrap — tho
 through an identity provider rather than calls a library makes. `Session::Call()` sends any action
 by name, both for those and for one that arrives in a later euclid than this SDK.
 
+### Asking whether something is there
+
+Most modules answer a plain existence question: `Esm::ExistsBucket()`, `Eqs::ExistsQueue()`,
+`Ens::ExistsTopic()`, `Ekm::ExistsKey()`, `Ekv::ExistsTable()` and `Ess::ExistsSecret()`.
+
+```cpp
+if (!esm.ExistsBucket("reports")) esm.CreateBucket("reports");
+```
+
+They have **three** answers, not two. `true` and `false` are the ones a caller expects; the third is
+a `ServiceError`, and it is the one that matters. An expired session, an unreachable gateway or a
+refused permission is not the same as "not there", and returning false for those would have callers
+deleting and recreating things over an outage — so only an HTTP `404` becomes `false`, and everything
+else is rethrown.
+
+`ExistsSecret()` asks `ListSecrets()` rather than `GetSecret()`, deliberately: `GetSecret()` answers
+with the decrypted value, so asking it this question would mean holding permission to *read the
+password* rather than to know the name is taken, decrypting it, carrying the plaintext back over the
+wire, and leaving an audit entry indistinguishable from somebody actually reading it. None of that is
+part of the question.
+
 ### Storage
 
 `ESM::Esm` is built from a session that has already logged in, and holds it rather than a copy of

@@ -1,6 +1,6 @@
 {
   "name": "euclid-cdk",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "C++ SDK for a euclid server",
   "license": "Apache-2.0",
   "dependencies": [
