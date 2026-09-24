@@ -2,6 +2,7 @@
 
 // C++ includes
 #include <filesystem>
+#include <string_view>
 #include <utility>
 
 // Boost includes
@@ -183,11 +184,26 @@ namespace Euclid::CDK {
     }
 
     std::string HttpClient::DefaultCaCertPath() {
-        // The same path euclid-pdk and euclid-ndk default to, so all three trust the certificate a
-        // euclid deployment installs without being told about it.
-        static const std::string kPath = "/etc/euclid/euclid_cert.crt";
+
+        // Both places a euclid deployment is known to keep it, in the order the SDKs have always
+        // looked. /etc/euclid is what euclid-pdk and euclid-ndk default to; /usr/local/euclid/etc is
+        // what euclid-cli defaults to and where the tarball install actually puts it. An
+        // installation with only the second one left an application failing its TLS handshake
+        // against a certificate sitting on the same disk, which is a poor way to find out the two
+        // conventions had drifted.
+        //
+        // First hit wins, and an empty answer means the system trust store alone - which is the
+        // right answer for a deployment behind a certificate a real CA issued.
+        static constexpr std::string_view kPaths[] = {
+                "/etc/euclid/euclid_cert.crt",
+                "/usr/local/euclid/etc/euclid_cert.crt",
+        };
+
         std::error_code ec;
-        return std::filesystem::exists(kPath, ec) ? kPath : std::string{};
+        for (const auto &path: kPaths) {
+            if (std::filesystem::exists(path, ec)) return std::string(path);
+        }
+        return {};
     }
 
 }// namespace Euclid::CDK

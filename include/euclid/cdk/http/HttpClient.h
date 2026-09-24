@@ -155,10 +155,19 @@ namespace Euclid::CDK {
          * @brief Where euclid installs its own CA certificate, when it is installed at all.
          *
          * @par
+         * Two places are looked at, in this order: "/etc/euclid/euclid_cert.crt", which euclid-pdk
+         * and euclid-ndk default to, and "/usr/local/euclid/etc/euclid_cert.crt", which euclid-cli
+         * defaults to and where the tarball install actually puts it. Both, because the two
+         * conventions drifted apart, and an installation with only the second one left an
+         * application failing its TLS handshake against a certificate sitting on the same disk.
+         *
+         * @par
          * Applied only when the file is actually there, so it is a no-op on a machine with no
          * euclid deployment and the right thing on one that has.
          *
-         * @return the path, or an empty string when there is no such file.
+         * @return the first of those paths that exists, or an empty string when neither does -
+         * which asks for the system trust store alone, and is the right answer for a deployment
+         * behind a certificate a real CA issued.
          */
         [[nodiscard]]
         static std::string DefaultCaCertPath();
