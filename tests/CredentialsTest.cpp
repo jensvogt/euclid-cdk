@@ -124,4 +124,46 @@ BOOST_AUTO_TEST_SUITE(CredentialsTest)
         BOOST_TEST(!Credentials::IsTokenValid("header." + Crypto::Base64Encode(R"({"sub":"jens"})") + ".signature"));
     }
 
+    // The file a euclid-managed application is handed, which the manager writes: the server is
+    // called "endpoint" there and "baseUrl" in a file this SDK wrote. Reading only "baseUrl" left an
+    // application with a valid token and nowhere to send it - the one field it cannot do without,
+    // and the one the header's own promise about EUCLID_CREDENTIALS_FILE depends on.
+    BOOST_AUTO_TEST_CASE(ReadsTheServerFromAManagedApplicationsCredentials) {
+
+        std::ofstream(Credentials::FilePath(), std::ios::trunc) << boost::json::serialize(boost::json::object{
+                {"token", tokenExpiring(nowSeconds() + 3600)},
+                {"expiresAt", "2026-09-24T15:07:36.000Z"},
+                {"userId", "app-echo-worker"},
+                {"accountId", "000000000000"},
+                {"region", "eu-central-1"},
+                {"namespace", "development"},
+                {"endpoint", "https://localhost:5566"}});
+
+        const auto loaded = Credentials::Load();
+        BOOST_REQUIRE(loaded.has_value());
+        BOOST_TEST(loaded->baseUrl == "https://localhost:5566");
+        BOOST_TEST(loaded->userId == "app-echo-worker");
+        BOOST_TEST(loaded->nameSpace == "development");
+        // No access key at all: a technical principal's secret never leaves EAM, so the token is
+        // the whole of what the process holds.
+        BOOST_TEST(loaded->accessKeyId.empty());
+
+        Credentials::Clear();
+    }
+
+    // And "baseUrl" still wins where both are present, so a file this SDK wrote is unaffected.
+    BOOST_AUTO_TEST_CASE(PrefersBaseUrlWhenTheFileCarriesBoth) {
+
+        std::ofstream(Credentials::FilePath(), std::ios::trunc) << boost::json::serialize(boost::json::object{
+                {"token", tokenExpiring(nowSeconds() + 3600)},
+                {"baseUrl", "https://euclid.example.com"},
+                {"endpoint", "https://localhost:5566"}});
+
+        const auto loaded = Credentials::Load();
+        BOOST_REQUIRE(loaded.has_value());
+        BOOST_TEST(loaded->baseUrl == "https://euclid.example.com");
+
+        Credentials::Clear();
+    }
+
 BOOST_AUTO_TEST_SUITE_END()

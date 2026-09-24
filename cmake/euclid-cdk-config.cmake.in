@@ -4,7 +4,11 @@ include(CMakeFindDependencyMacro)
 
 # Boost and OpenSSL are PUBLIC/PRIVATE link dependencies of the exported targets, so a consumer has
 # to be able to resolve them before the target file below can be included.
-find_dependency(Boost CONFIG COMPONENTS asio beast json system url)
+# Header-only Boost libraries are reached through Boost::headers rather than by name: whether an
+# install defines Boost::asio at all depends on how it was packaged - vcpkg does, an upstream or
+# distro install does not - and asking for one it has not got fails here, in euclid-cdk's own
+# configuration file, where a consumer can do nothing about it. Boost::headers exists in both.
+find_dependency(Boost CONFIG COMPONENTS headers json url)
 find_dependency(OpenSSL COMPONENTS SSL Crypto)
 find_dependency(Threads)
 

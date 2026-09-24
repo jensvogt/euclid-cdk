@@ -43,7 +43,19 @@ endif ()
 set(EUCLID_CDK_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Version.h.in ${EUCLID_CDK_GENERATED_DIR}/euclid/cdk/Version.h @ONLY)
 
-find_package(Boost CONFIG REQUIRED COMPONENTS asio beast json system url)
+# Only the compiled Boost libraries are asked for by name. Asio, Beast and System are header-only,
+# and whether a Boost install offers them as *components* depends entirely on how it was packaged:
+# vcpkg splits Boost into one port per library and so defines Boost::asio, while an upstream b2 or
+# distro install defines configs for the compiled libraries alone and covers every header-only one
+# with Boost::headers. Naming them here compiled fine against vcpkg and made the installed package
+# unusable against any other Boost - a consumer got "Could not find a package configuration file
+# provided by boost_asio" out of euclid-cdk-config.cmake, with nothing about it that was theirs to
+# fix.
+#
+# Boost::headers exists in both worlds, so this is the one spelling that resolves everywhere. Keep
+# it in step with cmake/euclid-cdk-config.cmake.in, which a consumer resolves the same dependencies
+# through.
+find_package(Boost CONFIG REQUIRED COMPONENTS headers json url)
 find_package(OpenSSL REQUIRED COMPONENTS SSL Crypto)
 find_package(Threads REQUIRED)
 
@@ -141,7 +153,7 @@ function(euclid_cdk_configure_target TARGET)
             $<BUILD_INTERFACE:${EUCLID_CDK_GENERATED_DIR}>
             $<INSTALL_INTERFACE:include>)
     target_link_libraries(${TARGET}
-            PUBLIC Boost::asio Boost::beast Boost::json Boost::system Boost::url
+            PUBLIC Boost::headers Boost::json Boost::url
             PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
     set_target_properties(${TARGET} PROPERTIES
             CXX_SCAN_FOR_MODULES OFF

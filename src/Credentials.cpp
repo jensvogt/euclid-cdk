@@ -63,6 +63,13 @@ namespace Euclid::CDK {
         entry.isAdmin = Json::Flag(document, "isAdmin");
         entry.nameSpace = Json::Text(document, "namespace");
         entry.baseUrl = Json::Text(document, "baseUrl");
+
+        // "endpoint" is the same field under the name the manager writes it as. A euclid-managed
+        // application is handed its credentials through EUCLID_CREDENTIALS_FILE - see FilePath() -
+        // and the file the manager writes there calls the server "endpoint", where a file this SDK
+        // wrote calls it "baseUrl". Reading only one of the two left an application with a valid
+        // token and no idea where to send it, which is the one field it cannot do without.
+        if (entry.baseUrl.empty()) entry.baseUrl = Json::Text(document, "endpoint");
         return entry;
     }
 
