@@ -16,6 +16,7 @@ namespace Euclid::CDK::ESM {
                 .encrypted = Json::Flag(value, "encrypted"),
                 .encryptionKeyErn = Json::Text(value, "encryptionKeyErn"),
                 .internal = Json::Flag(value, "internal"),
+                .priority = Json::Text(value, "priority"),
                 .created = Json::Text(value, "created"),
                 .modified = Json::Text(value, "modified"),
         };
@@ -77,6 +78,14 @@ namespace Euclid::CDK::ESM {
                 .ern = Json::Text(value, "ern"),
                 .name = Json::Text(value, "name"),
                 .internal = Json::Flag(value, "internal"),
+        };
+    }
+
+    SetBucketPriorityResult ToSetBucketPriorityResult(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                .name = Json::Text(value, "name"),
+                .priority = Json::Text(value, "priority"),
         };
     }
 

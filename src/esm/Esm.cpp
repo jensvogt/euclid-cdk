@@ -168,8 +168,15 @@ namespace Euclid::CDK::ESM {
 
     // -- buckets ------------------------------------------------------------------------------------
 
-    CreateBucketResult Esm::CreateBucket(const std::string &name, const bool internal) const {
-        return ToCreateBucketResult(Call("create-bucket", {{"name", name}, {"internal", internal}}));
+    CreateBucketResult Esm::CreateBucket(const std::string &name, const bool internal, const std::string &priority) const {
+
+        // The priority is left off the request entirely when there is none, rather than sent empty:
+        // a bucket that says nothing about priority is the default, and a create that always carried
+        // the field would have every older installation reading one it has no meaning for.
+        boost::json::object request{{"name", name}, {"internal", internal}};
+        if (!priority.empty()) request["priority"] = priority;
+
+        return ToCreateBucketResult(Call("create-bucket", request));
     }
 
     DeleteBucketResult Esm::DeleteBucket(const std::string &ern, const bool background) const {
@@ -215,6 +222,13 @@ namespace Euclid::CDK::ESM {
 
     SetBucketInternalResult Esm::SetBucketInternal(const std::string &ern, const bool internal) const {
         return ToSetBucketInternalResult(Call("set-bucket-internal", {{"ern", ern}, {"internal", internal}}));
+    }
+
+    SetBucketPriorityResult Esm::SetBucketPriority(const std::string &ern, const std::string &priority) const {
+
+        // Sent even when empty, unlike CreateBucket above: here an empty priority is the instruction
+        // to clear one, and leaving the field out would ask the server to change nothing.
+        return ToSetBucketPriorityResult(Call("set-bucket-priority", {{"ern", ern}, {"priority", priority}}));
     }
 
     PurgeBucketResult Esm::PurgeBucket(const std::string &ern, const std::string &prefix, const bool background) const {

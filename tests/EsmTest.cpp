@@ -907,4 +907,35 @@ BOOST_AUTO_TEST_SUITE(EsmCallTest)
         BOOST_TEST(sawAction(gateway, "list-buckets"));
     }
 
+    // A bucket's priority is for the notifications it sends, not for the bucket - so what matters is
+    // that it reaches the wire and that "no priority" is expressible.
+    BOOST_AUTO_TEST_CASE(SetsThePriorityItsNotificationsAreSentWith) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:bucket/inbox", "name": "inbox", "priority": "HIGH"})"));
+
+        const auto result = client.esm.SetBucketPriority(kBucket, "HIGH");
+        BOOST_TEST(result.priority == "HIGH");
+        BOOST_TEST(lastBody(client.gateway).at("priority").as_string() == "HIGH");
+    }
+
+    BOOST_AUTO_TEST_CASE(ClearingThePriorityStillSendsTheField) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:bucket/inbox", "name": "inbox", "priority": ""})"));
+
+        // Empty is an instruction here, not an omission: it is the only way back to letting the target
+        // queue's own default decide. Leaving the field out would ask the server to change nothing.
+        std::ignore = client.esm.SetBucketPriority(kBucket, "");
+        BOOST_TEST(lastBody(client.gateway).at("priority").as_string() == "");
+    }
+
+    BOOST_AUTO_TEST_CASE(CreateBucketOnlyCarriesAPriorityWhenThereIsOne) {
+        const EsmClient client(Test::Answering(R"({"name": "inbox", "ern": "ern:bucket/inbox"})"));
+
+        std::ignore = client.esm.CreateBucket("inbox");
+        // Absent rather than empty, so an older installation is not handed a field it has no meaning
+        // for - and so "no priority" is what a create has always said.
+        BOOST_TEST(!lastBody(client.gateway).as_object().contains("priority"));
+
+        std::ignore = client.esm.CreateBucket("inbox", false, "HIGH");
+        BOOST_TEST(lastBody(client.gateway).at("priority").as_string() == "HIGH");
+    }
+
 BOOST_AUTO_TEST_SUITE_END()

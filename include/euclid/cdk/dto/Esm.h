@@ -53,6 +53,16 @@ namespace Euclid::CDK::ESM {
          * asked for.
          */
         bool internal{};
+
+        /**
+         * @brief Priority the notifications this bucket sends are given, empty when it sets none.
+         *
+         * @par
+         * Nothing about the bucket depends on it: a bucket is not consumed from and has no queue of
+         * its own. It is handed to the messages a subscription of this bucket turns an object event
+         * into - see ESM::Esm::SetBucketPriority().
+         */
+        std::string priority;
         std::string created;
         std::string modified;
     };
@@ -140,6 +150,19 @@ namespace Euclid::CDK::ESM {
         std::string ern;
         std::string name;
         bool internal{};
+    };
+
+    /**
+     * @brief What set-bucket-priority answers with: the bucket, and the priority it now carries.
+     */
+    struct EUCLID_CDK_API SetBucketPriorityResult {
+        std::string ern;
+        std::string name;
+
+        /**
+         * @brief The priority as stored - upper case, or empty when it was cleared.
+         */
+        std::string priority;
     };
 
     /**
@@ -363,6 +386,12 @@ namespace Euclid::CDK::ESM {
      */
     [[nodiscard]]
     EUCLID_CDK_API SetBucketInternalResult ToSetBucketInternalResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads what set-bucket-priority answered with.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API SetBucketPriorityResult ToSetBucketPriorityResult(const boost::json::value &value);
 
     /**
      * @brief Reads a purge-bucket response.

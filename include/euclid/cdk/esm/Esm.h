@@ -233,7 +233,8 @@ namespace Euclid::CDK::ESM {
          * already exists changes its mind about that.
          */
         [[nodiscard]]
-        CreateBucketResult CreateBucket(const std::string &name, bool internal = false) const;
+        CreateBucketResult CreateBucket(const std::string &name, bool internal = false,
+                                        const std::string &priority = {}) const;
 
         /**
          * @brief Deletes a bucket, and its objects with it.
@@ -345,6 +346,37 @@ namespace Euclid::CDK::ESM {
          */
         [[nodiscard]]
         SetBucketInternalResult SetBucketInternal(const std::string &ern, bool internal = true) const;
+
+        /**
+         * @brief Sets the priority the notifications this bucket sends are given.
+         *
+         * @par
+         * The bucket does nothing with it. A bucket is not consumed from and has no queue of its
+         * own, so there is nothing here for a priority to mean - it exists to be handed on, to the
+         * messages a subscription of this bucket turns an object event into. "Everything that lands
+         * in this bucket is urgent" is the statement it makes, and the queue on the other side of
+         * the subscription is where that statement finally has an effect.
+         *
+         * @par Which priority wins
+         * Four statements can be in play about one message, least specific first: the target queue's
+         * own default, this, the priority in the object's own system attributes, and a priority a
+         * message already had when a topic passed it on. The object's beats the bucket's because it
+         * is the narrower claim - which is what lets a bucket set a floor without taking away the
+         * ability to say more about a particular object.
+         *
+         * @par Empty is not MEDIUM
+         * An empty priority clears it, and is the only way back to letting the queue decide. A
+         * bucket that says nothing leaves a queue created with LOW delivering at LOW, where a bucket
+         * saying MEDIUM would override it.
+         *
+         * @param ern      the bucket, by name or by ERN.
+         * @param priority "LOW", "MEDIUM" or "HIGH", or empty to clear it. Case is not significant;
+         *                 anything else is refused rather than ignored.
+         * @return the bucket and the priority it now carries.
+         * @throws ServiceError if the bucket does not exist or the priority is not one of the three.
+         */
+        [[nodiscard]]
+        SetBucketPriorityResult SetBucketPriority(const std::string &ern, const std::string &priority = {}) const;
 
         /**
          * @brief Deletes a bucket's objects, leaving the bucket itself in place.
