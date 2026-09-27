@@ -457,6 +457,35 @@ namespace Euclid::CDK::EAP {
         [[nodiscard]]
         Application GetApplication(const std::string &applicationId) const;
 
+        // -- infrastructure ---------------------------------------------------------------------
+
+        /**
+         * @brief Makes the installation match the application's own infrastructure declaration.
+         *
+         * @par
+         * The declaration is a file the application has already stored beside its artifact -
+         * `<applicationId>.euclid.json` in the bucket it deploys from - which names the queues,
+         * topics and buckets it owns and the ones belonging to others that it reaches. This applies
+         * it: creates what is missing, grants the access it asks for, and **deletes what this
+         * application created and the declaration no longer names**.
+         *
+         * @par
+         * Applying is idempotent and changes nothing about the running instances - the modification
+         * date is deliberately not stamped, so the manager does not read it as a new revision and
+         * cycle the pool. It happens on its own whenever the application is created, updated or
+         * redeployed; this is for reconciling without a deploy.
+         *
+         * @par
+         * An application with no declaration stored is answered rather than refused -
+         * InfrastructureResult::declared is false. A declaration that cannot be applied is an error:
+         * one that names a resource belonging to another application, or claims one it does not own,
+         * throws rather than being partly applied.
+         *
+         * @param applicationId the application, in the session's namespace.
+         */
+        [[nodiscard]]
+        InfrastructureResult ApplyInfrastructure(const std::string &applicationId) const;
+
         // -- logging ----------------------------------------------------------------------------
 
         /**

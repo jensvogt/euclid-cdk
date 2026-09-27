@@ -70,6 +70,17 @@ namespace Euclid::CDK::EAP {
         };
     }
 
+    InfrastructureResult ToInfrastructureResult(const boost::json::value &value) {
+        return {
+                .applicationId = Json::Text(value, "applicationId"),
+                .declared = Json::Flag(value, "declared"),
+                .created = Json::Strings(value, "created"),
+                .deleted = Json::Strings(value, "deleted"),
+                .granted = Json::Strings(value, "granted"),
+                .revoked = Json::Strings(value, "revoked"),
+        };
+    }
+
     LoadReport ToLoadReport(const boost::json::value &value) {
         return {
                 .instanceId = Json::Text(value, "instanceId"),

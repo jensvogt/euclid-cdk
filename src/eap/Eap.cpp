@@ -166,6 +166,12 @@ namespace Euclid::CDK::EAP {
         return ApplicationOf("get-application", {{"applicationId", applicationId}});
     }
 
+    // -- infrastructure -----------------------------------------------------------------------------
+
+    InfrastructureResult Eap::ApplyInfrastructure(const std::string &applicationId) const {
+        return ToInfrastructureResult(Call("apply-infrastructure", {{"applicationId", applicationId}}));
+    }
+
     // -- logging ------------------------------------------------------------------------------------
 
     LogLevelResult Eap::SetLogLevel(const std::string &applicationId, const std::string &level) const {

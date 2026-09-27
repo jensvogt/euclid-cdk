@@ -180,6 +180,34 @@ namespace Euclid::CDK::EAP {
     };
 
     /**
+     * @brief What applying an application's infrastructure declaration came to.
+     *
+     * @par
+     * `declared` false means the application has no declaration stored - not that applying one
+     * failed. Nothing was created, deleted or granted, and the four lists are empty; an application
+     * that provisions its resources by hand reads this way every time and is not in error.
+     *
+     * @par
+     * `deleted` is the half worth reading before trusting a declaration: a reconcile is full, so a
+     * resource this application created and the declaration no longer names is removed, taking a
+     * queue's messages or a bucket's objects with it. It is named here rather than counted so that a
+     * removal nobody intended is visible in the answer.
+     *
+     * @par
+     * `granted` and `revoked` name roles rather than permissions, and a re-apply that changes
+     * nothing still reports every `access-` role in both: they are replaced wholesale rather than
+     * diffed, so the same role appears as revoked and granted again.
+     */
+    struct EUCLID_CDK_API InfrastructureResult {
+        std::string applicationId;
+        bool declared{};
+        std::vector<std::string> created;
+        std::vector<std::string> deleted;
+        std::vector<std::string> granted;
+        std::vector<std::string> revoked;
+    };
+
+    /**
      * @brief A load report as the server recorded it.
      *
      * @par
@@ -217,6 +245,12 @@ namespace Euclid::CDK::EAP {
      */
     [[nodiscard]]
     EUCLID_CDK_API RestartResult ToRestartResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads an apply-infrastructure response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API InfrastructureResult ToInfrastructureResult(const boost::json::value &value);
 
     /**
      * @brief Reads a report-load response.

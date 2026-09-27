@@ -308,6 +308,49 @@ BOOST_AUTO_TEST_SUITE(EapRunningTest)
         BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "restart-application");
     }
 
+    // ── infrastructure ──────────────────────────────────────────────────────
+
+    BOOST_AUTO_TEST_CASE(ApplyingADeclarationNamesWhatItCreated) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "declared": true,
+                "created": ["ern:eqs:eu-central-1:000000000000:development:queue:orders"],
+                "deleted": [], "granted": ["access-queue-consume"], "revoked": []})"));
+
+        const auto applied = client.eap.ApplyInfrastructure("order-service");
+        BOOST_TEST(applied.declared);
+        BOOST_REQUIRE(applied.created.size() == 1U);
+        BOOST_TEST(applied.created[0] == "ern:eqs:eu-central-1:000000000000:development:queue:orders");
+        BOOST_TEST(applied.granted.size() == 1U);
+        BOOST_TEST(applied.deleted.empty());
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "apply-infrastructure");
+    }
+
+    // The half worth reading before trusting a declaration: a reconcile is full, so a resource this
+    // application created and the file no longer names goes, and takes its messages with it. Named
+    // here rather than counted, so a removal nobody intended is visible in the answer.
+    BOOST_AUTO_TEST_CASE(ApplyingADeclarationNamesWhatItRemoved) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "declared": true,
+                "created": [], "deleted": ["ern:eqs:eu-central-1:000000000000:development:queue:retired"],
+                "granted": [], "revoked": ["access-queue-produce"]})"));
+
+        const auto applied = client.eap.ApplyInfrastructure("order-service");
+        BOOST_REQUIRE(applied.deleted.size() == 1U);
+        BOOST_TEST(applied.deleted[0] == "ern:eqs:eu-central-1:000000000000:development:queue:retired");
+        BOOST_TEST(applied.revoked.size() == 1U);
+    }
+
+    // An application that provisions its resources by hand has no declaration, and that is an answer
+    // rather than a failure: nothing was created, and `declared` says why.
+    BOOST_AUTO_TEST_CASE(AnApplicationWithNoDeclarationIsAnsweredNotRefused) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "declared": false})"));
+
+        const auto applied = client.eap.ApplyInfrastructure("order-service");
+        BOOST_TEST(!applied.declared);
+        BOOST_TEST(applied.created.empty());
+        BOOST_TEST(applied.deleted.empty());
+        BOOST_TEST(applied.granted.empty());
+        BOOST_TEST(applied.revoked.empty());
+    }
+
     // Every match at once: an installation has tens of applications rather than thousands.
     BOOST_AUTO_TEST_CASE(ListsApplicationsByPrefix) {
         const auto listed = boost::json::serialize(boost::json::object{
