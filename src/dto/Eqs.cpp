@@ -84,6 +84,16 @@ namespace Euclid::CDK::EQS {
         };
     }
 
+    UpdateMessageBodyResult ToUpdateMessageBodyResult(const boost::json::value &value) {
+        return {
+                .messageId = Json::Text(value, "messageId"),
+                .queueErn = Json::Text(value, "queueErn"),
+                .size = Json::Number(value, "size"),
+                .previousSize = Json::Number(value, "previousSize"),
+                .contentType = Json::Text(value, "contentType"),
+        };
+    }
+
     MessageMetadata ToMessageMetadata(const boost::json::value &value) {
         return {
                 .messageId = Json::Text(value, "messageId"),

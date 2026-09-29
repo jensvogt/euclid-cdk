@@ -147,6 +147,10 @@ namespace Euclid::CDK::ENS {
         return ToMessageCount(Call("get-message-count", {{"ern", ern}}));
     }
 
+    UpdateMessageBodyResult Ens::UpdateMessageBody(const std::string &messageId, const std::string &body) const {
+        return ToUpdateMessageBodyResult(Call("update-message-body", {{"messageId", messageId}, {"body", body}}));
+    }
+
     MessageAttribute Ens::GetMessageAttribute(const std::string &messageId, const std::string &key) const {
         return ToMessageAttribute(Call("get-message-attribute", {{"messageId", messageId}, {"key", key}}));
     }

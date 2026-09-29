@@ -218,6 +218,22 @@ namespace Euclid::CDK::EQS {
     };
 
     /**
+     * @brief What a message looks like after its body was replaced.
+     *
+     * @par
+     * "previousSize" is the one thing a caller cannot go back and check: the body it replaced is
+     * gone by the time the answer arrives. Worth having when the point of the rewrite was to make a
+     * message smaller, or to confirm that it did not grow past what the queue accepts.
+     */
+    struct EUCLID_CDK_API UpdateMessageBodyResult {
+        std::string messageId;
+        std::string queueErn;
+        long size{};
+        long previousSize{};
+        std::string contentType;
+    };
+
+    /**
      * @brief Reads a queue.
      */
     [[nodiscard]]
@@ -258,6 +274,12 @@ namespace Euclid::CDK::EQS {
      */
     [[nodiscard]]
     EUCLID_CDK_API MessageMetadata ToMessageMetadata(const boost::json::value &value);
+
+    /**
+     * @brief Reads an update-message-body response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API UpdateMessageBodyResult ToUpdateMessageBodyResult(const boost::json::value &value);
 
     /**
      * @brief Reads a start-queue or stop-queue response.

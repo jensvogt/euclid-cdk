@@ -433,6 +433,25 @@ namespace Euclid::CDK::ENS {
         MessageCount GetMessageCount(const std::string &ern) const;
 
         /**
+         * @brief Replaces the body of a message already published to the topic.
+         *
+         * @par
+         * The whole body, not part of it. The message keeps its ID and its attributes; the body,
+         * its size and its content type are what change.
+         *
+         * @par
+         * What this reaches is the copy ENS still holds - what ListMessages() and GetMessage()
+         * answer with, and what a resend would send. A topic fans a message out to its subscribers
+         * when it is published, so the copies that already left are past changing. This corrects
+         * the record rather than the delivery, which is the opposite of what one would assume.
+         *
+         * @par
+         * The topic's maximum message length applies exactly as it does to PublishMessage().
+         */
+        [[nodiscard]]
+        UpdateMessageBodyResult UpdateMessageBody(const std::string &messageId, const std::string &body) const;
+
+        /**
          * @brief One attribute of one published message.
          *
          * @par

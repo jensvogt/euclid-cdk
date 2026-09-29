@@ -363,6 +363,49 @@ namespace Euclid::CDK::EAM {
          */
         void DeleteUser(const std::string &userId) const;
 
+        // -- passwords --------------------------------------------------------------------------
+        //
+        // One server action ("change-password") behind two methods, because it does two things and
+        // which of them it does is decided by whether a user is named. Wrapped as two so that
+        // neither can be reached by accident: a reset is not a change with the old password left
+        // out, and a change is not a reset aimed at yourself.
+
+        /**
+         * @brief Changes this session's own password.
+         *
+         * @par
+         * The old password is what proves the change may be made - a token alone is not enough, so
+         * that one left behind cannot be turned into the account itself.
+         *
+         * @par
+         * This session keeps working. Its bearer token is verified against the server's signing
+         * secret rather than against the password, so it stays valid until it expires; the new
+         * password is what the next login wants. Access keys are untouched.
+         *
+         * @param oldPassword the current password.
+         * @param newPassword the password to replace it with.
+         * @throws ServiceError if the old password is wrong (403), or if this user does not log in
+         * with a password at all (409) - a federated identity or an application's technical
+         * principal.
+         */
+        void ChangePassword(const std::string &oldPassword, const std::string &newPassword) const;
+
+        /**
+         * @brief Resets another user's password. Administrator only.
+         *
+         * @par
+         * No old password, because an administrator is not supposed to know one; being an
+         * administrator is the proof instead. Aiming this at yourself is refused rather than
+         * quietly accepted - use ChangePassword() for your own.
+         *
+         * @param userId      the user whose password to reset.
+         * @param newPassword the password to give them.
+         * @throws ServiceError if the caller is not an administrator (403), the user does not exist
+         * (404), or that user does not log in with a password (409).
+         * @throws EuclidError if userId names this session's own user.
+         */
+        void ResetPassword(const std::string &userId, const std::string &newPassword) const;
+
         // -- namespace scoping ------------------------------------------------------------------
 
         /**

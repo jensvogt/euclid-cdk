@@ -98,6 +98,25 @@ namespace Euclid::CDK::EAM {
         std::ignore = Call("delete-user", {{"userId", userId}});
     }
 
+    // -- passwords ------------------------------------------------------------------------------
+
+    void Session::ChangePassword(const std::string &oldPassword, const std::string &newPassword) const {
+        // No userId: the server reads an absent one as "mine", which is the only thing this method
+        // means. Sending _options.userId would say the same, but would also say it in a request
+        // that a session whose login never reported a user id could get wrong.
+        std::ignore = Call("change-password", {{"oldPassword", oldPassword}, {"newPassword", newPassword}});
+    }
+
+    void Session::ResetPassword(const std::string &userId, const std::string &newPassword) const {
+        // Refused here rather than at the server. Naming yourself is the *change* path there, and
+        // it would refuse this one for the old password it did not get - "the old password is not
+        // correct" being a poor way to learn that this is the wrong method.
+        if (userId == _options.userId) {
+            throw EuclidError("ResetPassword() is for another user's password; use ChangePassword(oldPassword, newPassword) for your own");
+        }
+        std::ignore = Call("change-password", {{"userId", userId}, {"newPassword", newPassword}});
+    }
+
     // -- namespace scoping ----------------------------------------------------------------------
 
     void Session::ChangeNamespace(const std::string &nameSpace) {

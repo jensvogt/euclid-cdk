@@ -660,6 +660,21 @@ namespace Euclid::CDK::EQS {
         void SetMessageVisibility(const std::string &messageId, long visibility) const;
 
         /**
+         * @brief Replaces the body of a message already on the queue.
+         *
+         * @par
+         * The whole body, not part of it - a message body is opaque to euclid, so there is nothing
+         * that could merge two of them. The message keeps its ID, status, priority, visibility and
+         * attributes; the body, its size and its content type are what change.
+         *
+         * @par
+         * The queue's maximum message length applies exactly as it does to SendMessage(), so a body
+         * that could not have been sent cannot be reached by sending something short and growing it.
+         */
+        [[nodiscard]]
+        UpdateMessageBodyResult UpdateMessageBody(const std::string &messageId, const std::string &body) const;
+
+        /**
          * @brief One attribute of one message.
          */
         [[nodiscard]]

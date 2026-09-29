@@ -207,10 +207,31 @@ namespace Euclid::CDK::ENS {
     };
 
     /**
+     * @brief What a message looks like after its body was replaced.
+     *
+     * @par
+     * "previousSize" is the one thing a caller cannot go back and check: the body it replaced is
+     * gone by the time the answer arrives.
+     */
+    struct EUCLID_CDK_API UpdateMessageBodyResult {
+        std::string messageId;
+        std::string topicErn;
+        long size{};
+        long previousSize{};
+        std::string contentType;
+    };
+
+    /**
      * @brief Reads a topic.
      */
     [[nodiscard]]
     EUCLID_CDK_API Topic ToTopic(const boost::json::value &value);
+
+    /**
+     * @brief Reads an update-message-body response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API UpdateMessageBodyResult ToUpdateMessageBodyResult(const boost::json::value &value);
 
     /**
      * @brief Reads a published message.
