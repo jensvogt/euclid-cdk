@@ -98,6 +98,25 @@ namespace Euclid::CDK::EAM {
         std::ignore = Call("delete-user", {{"userId", userId}});
     }
 
+    void Session::ChangePassword(const std::string &newPassword, const std::string &oldPassword,
+                                 const std::string &userId) const {
+
+        // userId empty is what asks for "mine", so it is sent as it came rather than filled in with
+        // UserId() here: naming yourself and naming nobody are the same request to the server, and
+        // filling it in would make a session whose token outlived a rename ask about the old name.
+        const boost::json::object payload{
+                {"userId", userId},
+                {"oldPassword", oldPassword},
+                {"newPassword", newPassword},
+        };
+        std::ignore = Call("change-password", payload);
+    }
+
+    User Session::ChangeUserId(const std::string &userId, const std::string &newUserId) const {
+        const boost::json::object payload{{"userId", userId}, {"newUserId", newUserId}};
+        return ToUser(Json::Child(Call("change-userid", payload), "user"));
+    }
+
     // -- namespace scoping ----------------------------------------------------------------------
 
     void Session::ChangeNamespace(const std::string &nameSpace) {
@@ -199,6 +218,45 @@ namespace Euclid::CDK::EAM {
     }
 
     // -- roles and grants -----------------------------------------------------------------------
+
+    Role Session::CreateRole(const std::string &name, const std::vector<std::string> &permissions,
+                             const std::string &description) const {
+
+        const boost::json::object payload{
+                {"name", name},
+                {"description", description},
+                {"permissions", boost::json::value_from(permissions)},
+        };
+        return ToRole(Json::Child(Call("create-role", payload), "role"));
+    }
+
+    Role Session::UpdateRole(const std::string &name, const std::vector<std::string> &permissions,
+                             const std::string &description) const {
+
+        // Permissions are sent whatever they are, because the server replaces rather than merges:
+        // this is the only call that can narrow a role, and a set left out of the request would be
+        // read as an empty one and refused rather than as "leave them alone".
+        const boost::json::object payload{
+                {"name", name},
+                {"description", description},
+                {"permissions", boost::json::value_from(permissions)},
+        };
+        return ToRole(Json::Child(Call("update-role", payload), "role"));
+    }
+
+    Role Session::GetRole(const std::string &name) const {
+        return ToRole(Json::Child(Call("get-role", {{"name", name}}), "role"));
+    }
+
+    Page<Role> Session::ListRoles(const ListOptions &options, const bool includeBuiltin) const {
+        auto payload = ListPayload(options, "name");
+        payload["includeBuiltin"] = includeBuiltin;
+        return ToPage<Role>(Call("list-roles", payload), "roles", ToRole);
+    }
+
+    void Session::DeleteRole(const std::string &name) const {
+        std::ignore = Call("delete-role", {{"name", name}});
+    }
 
     Grant Session::GrantRole(const std::string &role, const std::string &principal, const GrantOptions &options) const {
 

@@ -363,6 +363,57 @@ namespace Euclid::CDK::EAM {
          */
         void DeleteUser(const std::string &userId) const;
 
+        /**
+         * @brief Replaces a password - this session's own, or somebody else's.
+         *
+         * @par
+         * Two things wear this one name, and what separates them is what each has to prove: a person
+         * changing their own proves it by knowing the old one, and an administrator resetting
+         * somebody else's proves it by being an administrator. Which of the two a call is, is decided
+         * by the user it names rather than by what it sends, so leaving the old password out does not
+         * get the reset path.
+         *
+         * @par
+         * Note what this does not do: the bearer token a session already holds is a JWT, verified
+         * against the signing secret rather than against anything stored, so it stays valid for the
+         * rest of its hour. Changing a password closes the door for the next login, not for a session
+         * already through it - including this one.
+         *
+         * @param newPassword the new password.
+         * @param oldPassword the current one; required when changing your own, ignored when an
+         * administrator resets another user's.
+         * @param userId      whose password; empty is this session's own, and naming yourself is the
+         * same call rather than the administrator one.
+         * @throws ServiceError 403 if the old password is wrong - deliberately not 401, which every
+         * euclid client reads as "your session is gone" and answers by logging out, a poor answer to
+         * a typo. Also 403 without administrator rights for another user, 404 if there is no such
+         * user, and 409 if the user does not log in with a password at all - a federated user or an
+         * application's technical principal has none, and giving it one would hand it a way in it was
+         * deliberately created without.
+         */
+        void ChangePassword(const std::string &newPassword, const std::string &oldPassword = {},
+                            const std::string &userId = {}) const;
+
+        /**
+         * @brief Renames a user, keeping everything the user has.
+         *
+         * @par
+         * Administrator only, and refused while the user is the identity an application runs as -
+         * anywhere in the installation, not just this namespace, since an identity is
+         * installation-wide. Such an application would keep running and be refused everything it
+         * called, so EAP::Eap::UpdateApplication() has to point it at another user first.
+         *
+         * @param userId    the user to rename.
+         * @param newUserId the id to rename them to.
+         * @return the user under the new id.
+         * @throws ServiceError 400 if the two ids are the same - that is a caller who filled the
+         * same value in twice rather than a retry, since a retry of a rename that went through names
+         * an id that no longer exists and is answered 404. Also 404 if there is no such user, and 409
+         * if the new id is taken or the user runs an application.
+         */
+        [[nodiscard]]
+        User ChangeUserId(const std::string &userId, const std::string &newUserId) const;
+
         // -- namespace scoping ------------------------------------------------------------------
 
         /**
@@ -546,6 +597,81 @@ namespace Euclid::CDK::EAM {
         void DeleteNamespace(const std::string &accountId, const std::string &name) const;
 
         // -- roles and grants -------------------------------------------------------------------
+
+        /**
+         * @brief Defines a role of this account.
+         *
+         * @par
+         * A role is a name over a set of permissions, and a grant binds it to a principal - so this
+         * is where a permission set is written down once instead of at every grant.
+         *
+         * @param name        the role's name, unique within the account.
+         * @param permissions what it carries, as "<module>:<action>"; ListPermissions() is the whole
+         * set to choose from. At least one is required - a role with none grants nothing.
+         * @param description what it is for.
+         * @throws ServiceError 400 if a permission is not one any module answers; 409 if the account
+         * already has a role of that name, or if the name is a built-in one. A stored role may not
+         * shadow a built-in, because a grant resolves the account's own roles first and would
+         * silently replace the built-in for that account alone.
+         */
+        [[nodiscard]]
+        Role CreateRole(const std::string &name, const std::vector<std::string> &permissions,
+                        const std::string &description = {}) const;
+
+        /**
+         * @brief Replaces a role's permissions and description.
+         *
+         * @par
+         * Replaces rather than merges: a permission left out is taken away, which is the only way to
+         * narrow a role at all. The permissions are therefore required here as they are on creation.
+         *
+         * @throws ServiceError 400 if a permission is not one any module answers, 403 if the name is
+         * a built-in role, 404 if this account has no role of that name.
+         */
+        [[nodiscard]]
+        Role UpdateRole(const std::string &name, const std::vector<std::string> &permissions,
+                        const std::string &description = {}) const;
+
+        /**
+         * @brief One role, by name.
+         *
+         * @par
+         * The account's own first, then the built-ins - the same order a grant resolves in, so what
+         * this answers is what a grant of that name would actually use. Role::builtin says which of
+         * the two came back.
+         *
+         * @throws ServiceError 404 if neither has that name.
+         */
+        [[nodiscard]]
+        Role GetRole(const std::string &name) const;
+
+        /**
+         * @brief The roles this account can grant.
+         *
+         * @par
+         * The built-in roles come first and sit *outside* the paging - they are not stored, so there
+         * is no page to put them on, and a caller listing roles almost always wants to see what it
+         * can bind. The page's total counts the account's own roles only, which is why it can be
+         * smaller than the number of items.
+         *
+         * @param options       prefix, page and ordering for the stored roles.
+         * @param includeBuiltin whether the built-ins are listed too.
+         */
+        [[nodiscard]]
+        Page<Role> ListRoles(const ListOptions &options = {}, bool includeBuiltin = true) const;
+
+        /**
+         * @brief Deletes a role of this account.
+         *
+         * @par
+         * Refused rather than cascading while the role is still granted: deleting it out from under
+         * its grants would leave grants that quietly do nothing, and revoking somebody's access is a
+         * decision to take on purpose. ListGrants({.role = name}) is what the refusal points at.
+         *
+         * @throws ServiceError 403 if the name is a built-in role, 404 if there is no such role, 409
+         * if it is still granted to anybody.
+         */
+        void DeleteRole(const std::string &name) const;
 
         /**
          * @brief Gives a role to a user or a user group, scoped.

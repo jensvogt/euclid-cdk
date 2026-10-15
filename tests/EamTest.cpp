@@ -459,6 +459,179 @@ BOOST_AUTO_TEST_SUITE(EamCacheTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EamRoleDefinitionTest)
+
+    // A role is a name over a set of permissions, written down once instead of at every grant.
+    BOOST_AUTO_TEST_CASE(DefinesARoleAndReadsItBack) {
+        const FakeGateway gateway(gatewayHandler(R"({"role": {"name": "publisher-lite",
+                                                              "ern": "ern:euclid:eam:eu-central-1:000000000000:role/publisher-lite",
+                                                              "accountId": "000000000000", "region": "eu-central-1",
+                                                              "description": "publish only",
+                                                              "permissions": ["ens:publish-message", "eqs:send-message"],
+                                                              "builtin": false,
+                                                              "created": "2026-10-01T08:00:00Z"}})"));
+        const auto session = builder(gateway).Login();
+
+        const auto role = session.CreateRole("publisher-lite",
+                                             {"ens:publish-message", "eqs:send-message"}, "publish only");
+
+        BOOST_TEST(role.name == "publisher-lite");
+        BOOST_REQUIRE(role.permissions.size() == 2U);
+        BOOST_TEST(role.permissions[0] == "ens:publish-message");
+        BOOST_TEST(!role.builtin);
+
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("name").as_string() == "publisher-lite");
+        BOOST_TEST(body.at("description").as_string() == "publish only");
+        BOOST_REQUIRE(body.at("permissions").as_array().size() == 2U);
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "create-role");
+    }
+
+    // The server replaces rather than merges, so the permissions always travel: a set left out of
+    // the request would be read as an empty one and refused, not as "leave them alone". This is
+    // the only call that can narrow a role.
+    BOOST_AUTO_TEST_CASE(UpdatingAlwaysSendsThePermissions) {
+        const FakeGateway gateway(gatewayHandler(R"({"role": {"name": "publisher-lite",
+                                                              "permissions": ["ens:publish-message"]}})"));
+        const auto session = builder(gateway).Login();
+
+        const auto role = session.UpdateRole("publisher-lite", {"ens:publish-message"});
+
+        BOOST_REQUIRE(role.permissions.size() == 1U);
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_REQUIRE(body.as_object().contains("permissions"));
+        BOOST_TEST(body.at("permissions").as_array().size() == 1U);
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "update-role");
+    }
+
+    // A built-in role describes itself with the asking account's id, because that is the account a
+    // grant of it would be made in - and "builtin" is what says it cannot be changed or deleted.
+    BOOST_AUTO_TEST_CASE(ReadsABuiltInRoleAsOneOfTheAccountsOwn) {
+        const FakeGateway gateway(gatewayHandler(R"({"role": {"name": "operator", "accountId": "000000000000",
+                                                              "permissions": ["eqs:send-message"], "builtin": true}})"));
+        const auto session = builder(gateway).Login();
+
+        const auto role = session.GetRole("operator");
+
+        BOOST_TEST(role.builtin);
+        BOOST_TEST(role.accountId == "000000000000");
+        BOOST_TEST(boost::json::parse(gateway.LastRequest().body()).at("name").as_string() == "operator");
+    }
+
+    // The built-ins are listed outside the paging - they are not stored, so there is no page to put
+    // them on - which is why the total can be smaller than the number of items.
+    BOOST_AUTO_TEST_CASE(ListsTheBuiltInsBesideTheStoredOnes) {
+        const FakeGateway gateway(gatewayHandler(R"({"total": 1, "roles": [
+                {"name": "operator", "builtin": true},
+                {"name": "reader", "builtin": true},
+                {"name": "publisher-lite", "builtin": false}]})"));
+        const auto session = builder(gateway).Login();
+
+        const auto page = session.ListRoles();
+
+        BOOST_REQUIRE(page.items.size() == 3U);
+        BOOST_TEST(page.items[0].builtin);
+        BOOST_TEST(!page.items[2].builtin);
+        // One stored role, three listed.
+        BOOST_TEST(page.total == 1L);
+
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("includeBuiltin").as_bool() == true);
+        BOOST_TEST(body.at("sortColumn").as_string() == "name");
+    }
+
+    BOOST_AUTO_TEST_CASE(CanAskForTheStoredRolesAlone) {
+        const FakeGateway gateway(gatewayHandler(R"({"total": 1, "roles": [{"name": "publisher-lite"}]})"));
+        const auto session = builder(gateway).Login();
+
+        std::ignore = session.ListRoles({}, false);
+        BOOST_TEST(boost::json::parse(gateway.LastRequest().body()).at("includeBuiltin").as_bool() == false);
+    }
+
+    // Refused rather than cascading while the role is still granted: deleting it out from under its
+    // grants would leave grants that quietly do nothing.
+    BOOST_AUTO_TEST_CASE(CarriesTheRefusalWhenARoleIsStillGranted) {
+        const FakeGateway gateway(Test::Authenticated([](const Request &) {
+            return FakeGateway::Json(409, R"({"error": "Role is still granted to 3 principals; revoke those grants first"})");
+        }));
+        const auto session = builder(gateway).Login();
+
+        try {
+            session.DeleteRole("publisher-lite");
+            BOOST_FAIL("expected a ServiceError");
+        } catch (const ServiceError &ex) {
+            BOOST_TEST(ex.Status() == 409);
+            BOOST_TEST(ex.Action() == "delete-role");
+        }
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(EamPasswordTest)
+
+    // Empty userId is what asks for "mine", so it is sent as it came rather than filled in with
+    // UserId(): naming yourself and naming nobody are the same request to the server.
+    BOOST_AUTO_TEST_CASE(ChangingYourOwnPasswordNamesNobody) {
+        const FakeGateway gateway(gatewayHandler("{}"));
+        const auto session = builder(gateway).Login();
+
+        session.ChangePassword("new-secret", "old-secret");
+
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("userId").as_string() == "");
+        BOOST_TEST(body.at("oldPassword").as_string() == "old-secret");
+        BOOST_TEST(body.at("newPassword").as_string() == "new-secret");
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "change-password");
+    }
+
+    // An administrator resetting somebody else's proves it by being an administrator, so no old
+    // password travels - and which of the two a call is, is decided by the user it names.
+    BOOST_AUTO_TEST_CASE(ResettingAnothersPasswordNamesThem) {
+        const FakeGateway gateway(gatewayHandler("{}"));
+        const auto session = builder(gateway).Login();
+
+        session.ChangePassword("new-secret", {}, "jill");
+
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("userId").as_string() == "jill");
+        BOOST_TEST(body.at("oldPassword").as_string() == "");
+    }
+
+    // 403 rather than 401, deliberately: every euclid client reads 401 as "your session is gone"
+    // and answers by logging out, which is a poor answer to a mistyped old password.
+    BOOST_AUTO_TEST_CASE(AWrongOldPasswordDoesNotLogTheCallerOut) {
+        const FakeGateway gateway(Test::Authenticated([](const Request &) {
+            return FakeGateway::Json(403, R"({"error": "The old password is not correct"})");
+        }));
+        const auto session = builder(gateway).Login();
+
+        try {
+            session.ChangePassword("new-secret", "wrong");
+            BOOST_FAIL("expected a ServiceError");
+        } catch (const ServiceError &ex) {
+            BOOST_TEST(ex.Status() == 403);
+            BOOST_TEST(ex.Reason() == "The old password is not correct");
+        }
+        // The session is untouched - it is this one request that failed.
+        BOOST_TEST(!session.Token().empty());
+    }
+
+    BOOST_AUTO_TEST_CASE(RenamesAUserAndAnswersWithTheUserUnderTheNewId) {
+        const FakeGateway gateway(gatewayHandler(R"({"user": {"userId": "jens.vogt", "email": "jens@example.com",
+                                                              "accountId": "000000000000"}})"));
+        const auto session = builder(gateway).Login();
+
+        const auto renamed = session.ChangeUserId("jens", "jens.vogt");
+
+        BOOST_TEST(renamed.userId == "jens.vogt");
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("userId").as_string() == "jens");
+        BOOST_TEST(body.at("newUserId").as_string() == "jens.vogt");
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "change-userid");
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EamRoleTest)
 
     // What a user may do used to arrive on the user, as an accountGrants array. It is its own

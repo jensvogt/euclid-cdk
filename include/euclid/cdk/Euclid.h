@@ -27,8 +27,10 @@
  * EQS (queues), ENS (notifications), EKM (keys and certificates), EKV (tables of items), ESS
  * (secrets), ETS (the FTP and SFTP endpoints onto a bucket), EMO (monitoring - including
  * EMO::MeterRegistry, which counts and times what an application does and publishes it on a step,
- * the job Micrometer does in euclid-jdk), EAP (the applications euclid runs) and EAG (the API
- * gateway that publishes them to the outside world).
+ * the job Micrometer does in euclid-jdk), EAP (the applications euclid runs), EAG (the API gateway
+ * that publishes them to the outside world), EES (the event service, which is how something outside
+ * euclid watches what happens inside it), EAD (the audit trail) and EMM (the module manager, which
+ * is every module's live process pool).
  *
  * @code
  * const ESM::Esm esm(session);
@@ -65,11 +67,14 @@
 #include <euclid/cdk/auth/SigV4.h>
 #include <euclid/cdk/auth/SigningScheme.h>
 #include <euclid/cdk/dto/Com.h>
+#include <euclid/cdk/dto/Ead.h>
 #include <euclid/cdk/dto/Eag.h>
 #include <euclid/cdk/dto/Eam.h>
 #include <euclid/cdk/dto/Eap.h>
+#include <euclid/cdk/dto/Ees.h>
 #include <euclid/cdk/dto/Ekm.h>
 #include <euclid/cdk/dto/Ekv.h>
+#include <euclid/cdk/dto/Emm.h>
 #include <euclid/cdk/dto/Emo.h>
 #include <euclid/cdk/dto/Ens.h>
 #include <euclid/cdk/dto/Eqs.h>
@@ -77,12 +82,15 @@
 #include <euclid/cdk/dto/Ess.h>
 #include <euclid/cdk/dto/Ets.h>
 #include <euclid/cdk/dto/Page.h>
+#include <euclid/cdk/ead/Ead.h>
 #include <euclid/cdk/eag/Eag.h>
 #include <euclid/cdk/eam/Eam.h>
 #include <euclid/cdk/eam/Session.h>
 #include <euclid/cdk/eap/Eap.h>
+#include <euclid/cdk/ees/Ees.h>
 #include <euclid/cdk/ekm/Ekm.h>
 #include <euclid/cdk/ekv/Ekv.h>
+#include <euclid/cdk/emm/Emm.h>
 #include <euclid/cdk/emo/Emo.h>
 #include <euclid/cdk/emo/MeterRegistry.h>
 #include <euclid/cdk/ens/Ens.h>

@@ -417,6 +417,50 @@ BOOST_AUTO_TEST_SUITE(EnsMessageTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EnsDeliveryTest)
+
+    // A topic keeps what it published for its retention period by default, so a message stays
+    // readable after it has been delivered everywhere. This is what a pure fan-out turns off.
+    BOOST_AUTO_TEST_CASE(DropsADeliveredMessageWhenAskedTo) {
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/orders", "deleteAfterDelivery": true})"));
+
+        const auto set = client.ens.SetTopicDeleteAfterDelivery(kTopic, true);
+
+        BOOST_TEST(set.deleteAfterDelivery);
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("ern").as_string() == kTopic);
+        BOOST_TEST(body.at("deleteAfterDelivery").as_bool() == true);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "set-topic-delete-after-delivery");
+    }
+
+    BOOST_AUTO_TEST_CASE(AndBackAgain) {
+        const EnsClient client(Test::Answering(R"({"ern": "ern:topic/orders", "deleteAfterDelivery": false})"));
+
+        BOOST_TEST(!client.ens.SetTopicDeleteAfterDelivery(kTopic, false).deleteAfterDelivery);
+        BOOST_TEST(lastBody(client.gateway).at("deleteAfterDelivery").as_bool() == false);
+    }
+
+    // Changes what a later reader of the topic sees, not what anybody has already been handed: a
+    // copy already delivered is on that subscriber's queue and belongs to it now.
+    BOOST_AUTO_TEST_CASE(ReplacesAPublishedBodyAndSaysWhatItReplaced) {
+        const EnsClient client(Test::Answering(R"({"messageId": "m-1", "topicErn": "ern:topic/orders",
+                                                   "size": 44, "previousSize": 128,
+                                                   "contentType": "application/json"})"));
+
+        const auto updated = client.ens.UpdateMessageBody("m-1", R"({"orderId": 4711})");
+
+        BOOST_TEST(updated.topicErn == "ern:topic/orders");
+        BOOST_TEST(updated.size == 44L);
+        BOOST_TEST(updated.previousSize == 128L);
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("messageId").as_string() == "m-1");
+        BOOST_TEST(body.at("body").as_string() == R"({"orderId": 4711})");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "update-message-body");
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EnsSubscriptionTest)
 
     BOOST_AUTO_TEST_CASE(SubscribesAQueueToATopic) {

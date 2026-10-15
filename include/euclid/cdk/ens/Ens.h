@@ -367,6 +367,46 @@ namespace Euclid::CDK::ENS {
         long SetTopicMaxMessageLength(const std::string &ern, long maxMessageLength) const;
 
         /**
+         * @brief Whether the topic drops a message once every subscriber has had it.
+         *
+         * @par
+         * A topic keeps what it published for its retention period by default, so a message stays
+         * readable here after it has been delivered everywhere. Turning this on makes a delivered
+         * message go instead, which is what a topic that is purely a fan-out wants - nothing reads
+         * the topic's own copy, and keeping it costs storage and a retention sweep.
+         *
+         * @par
+         * It applies to what is published from here on. The messages the topic already holds were
+         * delivered under the old rule and stay until their retention runs out: turning this on is
+         * not a purge, and PurgeTopic() is.
+         *
+         * @throws ServiceError 404 if there is no such topic.
+         */
+        [[nodiscard]]
+        DeleteAfterDeliveryResult SetTopicDeleteAfterDelivery(const std::string &ern, bool deleteAfterDelivery) const;
+
+        /**
+         * @brief Replaces a published message's body where it lies.
+         *
+         * @par
+         * The message keeps its id and its attributes; only the body and the size change. Worth
+         * being clear about what it does not do: a copy already delivered to a subscriber is on that
+         * subscriber's queue and belongs to it now, so this changes what a *later* reader of the
+         * topic sees, not what anybody has already been handed.
+         *
+         * @par
+         * The new body is measured against the topic's own maximum.
+         *
+         * @param messageId the message, which says which topic this is without naming it.
+         * @param body      the new body.
+         * @return what it is now, and UpdateMessageBodyResult::previousSize for what it was.
+         * @throws ServiceError 400 if the body is longer than the topic accepts, 404 if there is no
+         * such message.
+         */
+        [[nodiscard]]
+        UpdateMessageBodyResult UpdateMessageBody(const std::string &messageId, const std::string &body) const;
+
+        /**
          * @brief Deletes every message a topic has kept, leaving the topic and its subscriptions in
          * place.
          *

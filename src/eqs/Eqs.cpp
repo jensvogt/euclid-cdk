@@ -262,6 +262,11 @@ namespace Euclid::CDK::EQS {
         return ToMessageAttribute(Call("get-message-attribute", {{"messageId", messageId}, {"name", name}}));
     }
 
+    UpdateMessageBodyResult Eqs::UpdateMessageBody(const std::string &messageId, const std::string &body) const {
+        const boost::json::object payload{{"messageId", messageId}, {"body", body}};
+        return ToUpdateMessageBodyResult(Call("update-message-body", payload));
+    }
+
     MessageAttribute Eqs::SetMessageAttribute(const std::string &messageId, const std::string &name, const COM::Variant &value) const {
         // "key" going out and "name" coming back, which is the server's own asymmetry.
         const boost::json::object payload{{"messageId", messageId}, {"key", name}, {"value", value.ToJson()}};
