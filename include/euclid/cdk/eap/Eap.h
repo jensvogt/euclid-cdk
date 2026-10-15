@@ -457,6 +457,56 @@ namespace Euclid::CDK::EAP {
         [[nodiscard]]
         Application GetApplication(const std::string &applicationId) const;
 
+        // -- nodes --------------------------------------------------------------------------------
+
+        /**
+         * @brief The hosts registered to run instances for this account.
+         *
+         * @par
+         * Nodes are not configured here: a worker announces itself and renews on a lease, so this is
+         * a snapshot of what each last said about itself. An installation running everything on the
+         * manager's own host has none, and that is not a fault.
+         *
+         * @par
+         * Node::applications is empty from this call - see GetNode() for why.
+         */
+        [[nodiscard]]
+        std::vector<Node> ListNodes() const;
+
+        /**
+         * @brief One node, and what it is holding slots for.
+         *
+         * @par
+         * The only call that fills Node::applications, because what a node is running is the one
+         * thing about it that is not on the node's own record - working it out means walking every
+         * module pool, which is a cost a listing should not pay per node.
+         *
+         * @param node the node's name.
+         * @throws ServiceError 404 if no node of that name is registered.
+         */
+        [[nodiscard]]
+        Node GetNode(const std::string &node) const;
+
+        /**
+         * @brief Removes a node's registration, freeing the name for another principal.
+         *
+         * @par
+         * Administrator only, unlike the other node calls, and for a specific reason: a worker able
+         * to delete another's registration could re-register under its name and be handed its
+         * assignments and credentials. Binding the name to the principal that registered it is what
+         * closes that, and this is the one way the binding is released.
+         *
+         * @par
+         * **This does not stop a node.** The leases are left alone, so a worker that is still running
+         * finds itself unregistered on its next renewal and simply registers again. Draining the
+         * node and then stopping the worker is how one is taken out of service.
+         *
+         * @param node the node's name.
+         * @throws ServiceError 403 without administrator rights, 404 if no node of that name is
+         * registered.
+         */
+        void DeleteNode(const std::string &node) const;
+
         // -- infrastructure ---------------------------------------------------------------------
 
         /**

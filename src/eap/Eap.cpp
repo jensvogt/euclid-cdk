@@ -166,6 +166,24 @@ namespace Euclid::CDK::EAP {
         return ApplicationOf("get-application", {{"applicationId", applicationId}});
     }
 
+    // -- nodes --------------------------------------------------------------------------------------
+
+    std::vector<Node> Eap::ListNodes() const {
+        std::vector<Node> nodes;
+        for (const auto &document: Json::Documents(Call("list-nodes"), "nodes")) {
+            nodes.push_back(ToNode(document));
+        }
+        return nodes;
+    }
+
+    Node Eap::GetNode(const std::string &node) const {
+        return ToNode(Call("get-node", {{"node", node}}));
+    }
+
+    void Eap::DeleteNode(const std::string &node) const {
+        std::ignore = Call("delete-node", {{"node", node}});
+    }
+
     // -- infrastructure -----------------------------------------------------------------------------
 
     InfrastructureResult Eap::ApplyInfrastructure(const std::string &applicationId) const {

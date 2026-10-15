@@ -98,23 +98,23 @@ namespace Euclid::CDK::EAM {
         std::ignore = Call("delete-user", {{"userId", userId}});
     }
 
-    // -- passwords ------------------------------------------------------------------------------
+    void Session::ChangePassword(const std::string &newPassword, const std::string &oldPassword,
+                                 const std::string &userId) const {
 
-    void Session::ChangePassword(const std::string &oldPassword, const std::string &newPassword) const {
-        // No userId: the server reads an absent one as "mine", which is the only thing this method
-        // means. Sending _options.userId would say the same, but would also say it in a request
-        // that a session whose login never reported a user id could get wrong.
-        std::ignore = Call("change-password", {{"oldPassword", oldPassword}, {"newPassword", newPassword}});
+        // userId empty is what asks for "mine", so it is sent as it came rather than filled in with
+        // UserId() here: naming yourself and naming nobody are the same request to the server, and
+        // filling it in would make a session whose token outlived a rename ask about the old name.
+        const boost::json::object payload{
+                {"userId", userId},
+                {"oldPassword", oldPassword},
+                {"newPassword", newPassword},
+        };
+        std::ignore = Call("change-password", payload);
     }
 
-    void Session::ResetPassword(const std::string &userId, const std::string &newPassword) const {
-        // Refused here rather than at the server. Naming yourself is the *change* path there, and
-        // it would refuse this one for the old password it did not get - "the old password is not
-        // correct" being a poor way to learn that this is the wrong method.
-        if (userId == _options.userId) {
-            throw EuclidError("ResetPassword() is for another user's password; use ChangePassword(oldPassword, newPassword) for your own");
-        }
-        std::ignore = Call("change-password", {{"userId", userId}, {"newPassword", newPassword}});
+    User Session::ChangeUserId(const std::string &userId, const std::string &newUserId) const {
+        const boost::json::object payload{{"userId", userId}, {"newUserId", newUserId}};
+        return ToUser(Json::Child(Call("change-userid", payload), "user"));
     }
 
     // -- namespace scoping ----------------------------------------------------------------------

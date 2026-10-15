@@ -93,6 +93,16 @@ namespace Euclid::CDK::ENS {
         return NumberOf("set-topic-max-message-length", {{"ern", ern}, {"maxMessageLength", maxMessageLength}}, "maxMessageLength");
     }
 
+    DeleteAfterDeliveryResult Ens::SetTopicDeleteAfterDelivery(const std::string &ern, const bool deleteAfterDelivery) const {
+        const boost::json::object payload{{"ern", ern}, {"deleteAfterDelivery", deleteAfterDelivery}};
+        return ToDeleteAfterDeliveryResult(Call("set-topic-delete-after-delivery", payload));
+    }
+
+    UpdateMessageBodyResult Ens::UpdateMessageBody(const std::string &messageId, const std::string &body) const {
+        const boost::json::object payload{{"messageId", messageId}, {"body", body}};
+        return ToUpdateMessageBodyResult(Call("update-message-body", payload));
+    }
+
     void Ens::PurgeTopic(const std::string &ern) const {
         std::ignore = Call("purge-topic", {{"ern", ern}});
     }

@@ -193,6 +193,29 @@ namespace Euclid::CDK::ENS {
     };
 
     /**
+     * @brief What replacing a message's body came to.
+     *
+     * @par
+     * "previousSize" is the point of the answer: the one thing a caller cannot check afterwards is
+     * what it replaced.
+     */
+    struct EUCLID_CDK_API UpdateMessageBodyResult {
+        std::string messageId;
+        std::string topicErn;
+        long size{};
+        long previousSize{};
+        std::string contentType;
+    };
+
+    /**
+     * @brief Whether a topic drops a message once every subscriber has had it.
+     */
+    struct EUCLID_CDK_API DeleteAfterDeliveryResult {
+        std::string ern;
+        bool deleteAfterDelivery{};
+    };
+
+    /**
      * @brief A topic's message counters - the server's own three, which are not a queue's.
      *
      * @par
@@ -273,6 +296,17 @@ namespace Euclid::CDK::ENS {
      */
     [[nodiscard]]
     EUCLID_CDK_API TopicRetentionResult ToTopicRetentionResult(const boost::json::value &value);
+    /**
+     * @brief Reads an update-message-body response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API UpdateMessageBodyResult ToUpdateMessageBodyResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads a set-topic-delete-after-delivery response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API DeleteAfterDeliveryResult ToDeleteAfterDeliveryResult(const boost::json::value &value);
 
     /**
      * @brief Reads a get-message-count response.

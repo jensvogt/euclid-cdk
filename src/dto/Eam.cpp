@@ -36,6 +36,20 @@ namespace Euclid::CDK::EAM {
         };
     }
 
+    Role ToRole(const boost::json::value &value) {
+        return {
+                .name = Json::Text(value, "name"),
+                .ern = Json::Text(value, "ern"),
+                .accountId = Json::Text(value, "accountId"),
+                .region = Json::Text(value, "region"),
+                .description = Json::Text(value, "description"),
+                .permissions = Json::Strings(value, "permissions"),
+                .builtin = Json::Flag(value, "builtin"),
+                .created = Json::Text(value, "created"),
+                .modified = Json::Text(value, "modified"),
+        };
+    }
+
     User ToUser(const boost::json::value &value) {
         User user{
                 .userId = Json::Text(value, "userId"),

@@ -81,6 +81,44 @@ namespace Euclid::CDK::EAP {
         };
     }
 
+    NodeApplication ToNodeApplication(const boost::json::value &value) {
+        return {
+                .applicationId = Json::Text(value, "applicationId"),
+                .runtimeName = Json::Text(value, "runtimeName"),
+                // "namespace" here, as everywhere in this module.
+                .nameSpace = Json::Text(value, "namespace"),
+                .runtime = Json::Text(value, "runtime"),
+                .instances = Json::Number(value, "instances"),
+                .running = Json::Number(value, "running"),
+        };
+    }
+
+    Node ToNode(const boost::json::value &value) {
+
+        Node node{
+                .name = Json::Text(value, "name"),
+                .address = Json::Text(value, "address"),
+                .principal = Json::Text(value, "principal"),
+                .labels = Json::StringMap(value, "labels"),
+                .cpuCount = Json::Number(value, "cpuCount"),
+                // Real rather than Number: a load average of 0.5 is a real reading, and reading it
+                // as a long would report it as nothing at all.
+                .loadAverage = Json::Real(value, "loadAverage"),
+                .version = Json::Text(value, "version"),
+                .os = Json::Text(value, "os"),
+                .arch = Json::Text(value, "arch"),
+                .drained = Json::Flag(value, "drained"),
+                .live = Json::Flag(value, "live"),
+                .lastSeen = Json::Text(value, "lastSeen"),
+                .applications = {},
+        };
+
+        for (const auto &document: Json::Documents(value, "applications")) {
+            node.applications.push_back(ToNodeApplication(document));
+        }
+        return node;
+    }
+
     LoadReport ToLoadReport(const boost::json::value &value) {
         return {
                 .instanceId = Json::Text(value, "instanceId"),

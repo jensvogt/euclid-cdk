@@ -76,6 +76,39 @@ namespace Euclid::CDK::EAM {
     };
 
     /**
+     * @brief A role: a name, and the permissions it carries.
+     *
+     * @par
+     * What a grant binds to a principal. The permissions are "<module>:<action>" pairs, and the
+     * whole set of them is what Session::ListPermissions() answers.
+     *
+     * @par
+     * "builtin" separates the roles euclid ships - "account-administrator", "operator", "reader",
+     * "publisher", "consumer", "application" - from an account's own. A built-in one belongs to no
+     * account's storage and cannot be changed or deleted; it still describes itself with the asking
+     * account's ID and region, because that is the account the grant would be made in.
+     */
+    struct EUCLID_CDK_API Role {
+        std::string name;
+        std::string ern;
+        std::string accountId;
+        std::string region;
+        std::string description;
+
+        /**
+         * @brief The permissions this role carries, as "<module>:<action>".
+         */
+        std::vector<std::string> permissions;
+
+        /**
+         * @brief Whether euclid ships this role rather than the account defining it.
+         */
+        bool builtin{};
+        std::string created;
+        std::string modified;
+    };
+
+    /**
      * @brief A user. "password" is a hash when the server sends one at all - never the plaintext.
      */
     struct EUCLID_CDK_API User {
@@ -172,6 +205,12 @@ namespace Euclid::CDK::EAM {
      */
     [[nodiscard]]
     EUCLID_CDK_API Grant ToGrant(const boost::json::value &value);
+
+    /**
+     * @brief Reads a role.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API Role ToRole(const boost::json::value &value);
 
     /**
      * @brief Reads a user.

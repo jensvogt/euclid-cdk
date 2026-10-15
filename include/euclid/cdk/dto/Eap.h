@@ -208,6 +208,83 @@ namespace Euclid::CDK::EAP {
     };
 
     /**
+     * @brief One application a node is holding slots for, as GetNode() reports it.
+     *
+     * @par
+     * "instances" is the slots this node holds and "running" is the ones actually serving out of
+     * them. Both, because a node holding four slots and running none is the state worth seeing, and
+     * one count cannot say it.
+     */
+    struct EUCLID_CDK_API NodeApplication {
+        std::string applicationId;
+        std::string runtimeName;
+        std::string nameSpace;
+        std::string runtime;
+        long instances{};
+        long running{};
+    };
+
+    /**
+     * @brief A host registered to run application instances.
+     *
+     * @par
+     * A node announces itself and renews on a lease; nothing here is configured by hand. What the
+     * SDK reads is therefore a snapshot of what a worker last said about itself.
+     *
+     * @par
+     * "live" is whether the lease is still good, and is the field to read rather than comparing
+     * lastSeen against a clock - the lease period is the server's to decide. "drained" is the other
+     * half of the picture and the two are independent: a drained node is live, keeps what it runs
+     * and keeps renewing, and is only refused *new* placements. That is the whole difference between
+     * draining a node and stopping one.
+     */
+    struct EUCLID_CDK_API Node {
+        std::string name;
+        std::string address;
+
+        /**
+         * @brief The user the worker registered as, which is what binds this name to it - another
+         * principal cannot re-register under it while the registration stands.
+         */
+        std::string principal;
+        std::map<std::string, std::string> labels;
+        long cpuCount{};
+
+        /**
+         * @brief The one-minute load average from the node's last heartbeat, as current as lastSeen
+         * says it is.
+         *
+         * @par
+         * Zero for a heartbeat that carried no reading, which is also what an idle machine reports -
+         * the two are not told apart here, any more than placement tells them apart.
+         */
+        double loadAverage{};
+        std::string version;
+        std::string os;
+        std::string arch;
+
+        /**
+         * @brief Whether new instances are being kept off this node.
+         */
+        bool drained{};
+
+        /**
+         * @brief Whether the node's lease is still good.
+         */
+        bool live{};
+        std::string lastSeen;
+
+        /**
+         * @brief What this node is holding slots for - answered by GetNode() alone.
+         *
+         * @par
+         * Empty from ListNodes(), which does not ask: it is the one thing about a node that is not
+         * on the node's own record, so it costs a walk of every module pool to work out.
+         */
+        std::vector<NodeApplication> applications;
+    };
+
+    /**
      * @brief A load report as the server recorded it.
      *
      * @par
@@ -251,6 +328,18 @@ namespace Euclid::CDK::EAP {
      */
     [[nodiscard]]
     EUCLID_CDK_API InfrastructureResult ToInfrastructureResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads one application of a node.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API NodeApplication ToNodeApplication(const boost::json::value &value);
+
+    /**
+     * @brief Reads a node.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API Node ToNode(const boost::json::value &value);
 
     /**
      * @brief Reads a report-load response.

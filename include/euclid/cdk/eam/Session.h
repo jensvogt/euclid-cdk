@@ -363,48 +363,56 @@ namespace Euclid::CDK::EAM {
          */
         void DeleteUser(const std::string &userId) const;
 
-        // -- passwords --------------------------------------------------------------------------
-        //
-        // One server action ("change-password") behind two methods, because it does two things and
-        // which of them it does is decided by whether a user is named. Wrapped as two so that
-        // neither can be reached by accident: a reset is not a change with the old password left
-        // out, and a change is not a reset aimed at yourself.
+        /**
+         * @brief Replaces a password - this session's own, or somebody else's.
+         *
+         * @par
+         * Two things wear this one name, and what separates them is what each has to prove: a person
+         * changing their own proves it by knowing the old one, and an administrator resetting
+         * somebody else's proves it by being an administrator. Which of the two a call is, is decided
+         * by the user it names rather than by what it sends, so leaving the old password out does not
+         * get the reset path.
+         *
+         * @par
+         * Note what this does not do: the bearer token a session already holds is a JWT, verified
+         * against the signing secret rather than against anything stored, so it stays valid for the
+         * rest of its hour. Changing a password closes the door for the next login, not for a session
+         * already through it - including this one.
+         *
+         * @param newPassword the new password.
+         * @param oldPassword the current one; required when changing your own, ignored when an
+         * administrator resets another user's.
+         * @param userId      whose password; empty is this session's own, and naming yourself is the
+         * same call rather than the administrator one.
+         * @throws ServiceError 403 if the old password is wrong - deliberately not 401, which every
+         * euclid client reads as "your session is gone" and answers by logging out, a poor answer to
+         * a typo. Also 403 without administrator rights for another user, 404 if there is no such
+         * user, and 409 if the user does not log in with a password at all - a federated user or an
+         * application's technical principal has none, and giving it one would hand it a way in it was
+         * deliberately created without.
+         */
+        void ChangePassword(const std::string &newPassword, const std::string &oldPassword = {},
+                            const std::string &userId = {}) const;
 
         /**
-         * @brief Changes this session's own password.
+         * @brief Renames a user, keeping everything the user has.
          *
          * @par
-         * The old password is what proves the change may be made - a token alone is not enough, so
-         * that one left behind cannot be turned into the account itself.
+         * Administrator only, and refused while the user is the identity an application runs as -
+         * anywhere in the installation, not just this namespace, since an identity is
+         * installation-wide. Such an application would keep running and be refused everything it
+         * called, so EAP::Eap::UpdateApplication() has to point it at another user first.
          *
-         * @par
-         * This session keeps working. Its bearer token is verified against the server's signing
-         * secret rather than against the password, so it stays valid until it expires; the new
-         * password is what the next login wants. Access keys are untouched.
-         *
-         * @param oldPassword the current password.
-         * @param newPassword the password to replace it with.
-         * @throws ServiceError if the old password is wrong (403), or if this user does not log in
-         * with a password at all (409) - a federated identity or an application's technical
-         * principal.
+         * @param userId    the user to rename.
+         * @param newUserId the id to rename them to.
+         * @return the user under the new id.
+         * @throws ServiceError 400 if the two ids are the same - that is a caller who filled the
+         * same value in twice rather than a retry, since a retry of a rename that went through names
+         * an id that no longer exists and is answered 404. Also 404 if there is no such user, and 409
+         * if the new id is taken or the user runs an application.
          */
-        void ChangePassword(const std::string &oldPassword, const std::string &newPassword) const;
-
-        /**
-         * @brief Resets another user's password. Administrator only.
-         *
-         * @par
-         * No old password, because an administrator is not supposed to know one; being an
-         * administrator is the proof instead. Aiming this at yourself is refused rather than
-         * quietly accepted - use ChangePassword() for your own.
-         *
-         * @param userId      the user whose password to reset.
-         * @param newPassword the password to give them.
-         * @throws ServiceError if the caller is not an administrator (403), the user does not exist
-         * (404), or that user does not log in with a password (409).
-         * @throws EuclidError if userId names this session's own user.
-         */
-        void ResetPassword(const std::string &userId, const std::string &newPassword) const;
+        [[nodiscard]]
+        User ChangeUserId(const std::string &userId, const std::string &newUserId) const;
 
         // -- namespace scoping ------------------------------------------------------------------
 

@@ -8,7 +8,9 @@ It covers **EAM** — euclid's access management module — which is where a log
 session a login answers with: **ESM** (storage), **EQS** (queues), **ENS** (notifications), **EKM**
 (keys and certificates), **EKV** (tables of items), **ESS** (secrets), **ETS** (the FTP and SFTP
 endpoints onto a bucket), **EMO** (monitoring, including a metrics registry an application records
-into), **EAP** (the applications euclid runs) and **EAG** (the API gateway that publishes them).
+into), **EAP** (the applications euclid runs), **EAG** (the API gateway that publishes them),
+**EES** (the event service — how something outside euclid watches what happens inside it), **EAD**
+(the audit trail) and **EMM** (the module manager, which is every module's live process pool).
 
 That is all of euclid. For an action this SDK does not name — one newer than the release you have —
 `CDK::ModuleClient` is what a module client is built out of, and `EAM::Session::NewRequest()` and
@@ -68,10 +70,23 @@ auto session = EAM::Eam::ForServer(url)
                        .Login();
 ```
 
-The session covers users, groups, accounts, namespaces, namespace grants, access keys and metrics.
-The OIDC and SAML browser flows are the one part of EAM it does not wrap — those are redirects
-through an identity provider rather than calls a library makes. `Session::Call()` sends any action
-by name, both for those and for one that arrives in a later euclid than this SDK.
+The session covers users, groups, accounts, namespaces, roles, grants, access keys, passwords and
+metrics. The OIDC and SAML browser flows are the one part of EAM it does not wrap — those are
+redirects through an identity provider rather than calls a library makes. `Session::Call()` sends any
+action by name, both for those and for one that arrives in a later euclid than this SDK.
+
+A **role** is a name over a set of permissions, written down once instead of at every grant:
+`CreateRole()`, `UpdateRole()`, `GetRole()`, `ListRoles()`, `DeleteRole()`. Three things about them
+differ from the rest of the session. `UpdateRole()` *replaces* the permissions rather than merging,
+which is the only way to narrow a role. `ListRoles()` puts the built-ins first and outside the
+paging — they aren't stored, so there is no page to put them on — which is why the total can be
+smaller than the number of items. And `DeleteRole()` is refused while the role is still granted,
+rather than cascading and leaving grants that quietly do nothing.
+
+`ChangePassword()` is two operations under one name, and which one it is depends on the user it names
+rather than on what it sends: your own needs the old password, somebody else's needs administrator
+rights. A wrong old password answers `403` and not `401`, deliberately — every euclid client reads
+`401` as "your session is gone" and logs out, which is a poor answer to a typo.
 
 ### Asking whether something is there
 
@@ -424,6 +439,83 @@ Three things are worth knowing, because each is a way a graph could otherwise li
 A push that fails is counted in `FailedPublishes()` and dropped rather than retried: a rate sent
 twice is counted twice, and nothing here throws at the application, which does not stop because it
 could not say how it was doing.
+
+### Watching what happens inside euclid
+
+`EES::Ees` is the way out of euclid's internal event bus for something that is not a module. Where a
+bucket subscription puts object events into a queue for one bucket, this reaches every event every
+module publishes:
+
+```cpp
+const EES::Ees ees(session);
+std::ignore = ees.Subscribe("indexer", {std::string(EES::ObjectCreated)});
+
+for (;;) {
+    const auto received = ees.ReceiveEvents("indexer", {.waitTime = std::chrono::seconds(20)});
+    std::vector<std::string> done;
+    for (const auto &event : received.events) {
+        handle(event);
+        done.push_back(event.eventId);
+    }
+    if (!done.empty()) std::ignore = ees.AckEvents("indexer", done);
+}
+```
+
+**The subscriber name is the identity.** Every call names one rather than carrying a handle, and that
+name owns the backlog — so two processes using one name are two consumers of one subscription, each
+getting events the other does not. That is how a subscriber is scaled out, and a bug if it wasn't
+meant.
+
+A received event is *claimed*, not removed: invisible to anybody else until the visibility timeout
+runs out, and only `AckEvents()` takes it away. So an event survives a subscriber that crashes
+mid-handling and comes back with `Event::attempts` raised — which is why handling has to tolerate
+seeing one twice. `ModeDurable` is the default; `ModeLive` drops what arrives while nobody is
+listening, which suits a dashboard and nothing else.
+
+A payload is left as JSON, because its shape belongs to whichever module published it.
+
+### The audit trail
+
+`EAD::Ead` reads what was run, by whom, in which account. It only reads: every module records its own
+commands as it answers them, so there is no "record event" call and nothing an application has to do
+to be audited — an audit whose write path ran through a separate module would be missing entries
+exactly when that module was down.
+
+```cpp
+const auto page = ead.ListEvents({.module = "esm", .command = "delete-object", .pageSize = 50});
+```
+
+`ListEvents()` returns a **capped** total: `AuditPage::totalExact` false means "at least this many",
+which is all a pager needs to know there is another page. An exact count on a trail of tens of
+millions is seconds of database time beside a page of fifty, paid again on every page somebody turns
+— `CountEvents()` is there when the number itself is the answer. `PurgeEvents()` requires a positive
+window, and is itself recorded.
+
+### Module processes
+
+`EMM::Emm` is every module's live process pool. "Module" is wider than it sounds: euclid's own
+services are modules, and so is every application pool EAP runs and every transfer server ETS runs.
+
+```cpp
+for (const auto &module : emm.ListModules().modules) {
+    std::cout << module.name << " " << module.instances.size() << "\n";
+}
+```
+
+`Module::core` separates euclid's own from the rest and decides what the control calls accept:
+`StartModule()` and `StopModule()` are **refused for anything that is not core**, because an
+application's or a transfer server's desired state belongs to EAP and ETS and anything recorded here
+would be undone within seconds. `RestartModule()` works on all three — it changes no desired state,
+so the same instances come straight back.
+
+Nothing here waits; the manager acts on its next reconcile. Two sentinels are worth knowing:
+`ModuleInstance::utilisation` and `backlog` read **-1** for an instance that has never reported,
+which is not the same as one reporting no load, and the `desired…` limits read -1 for "nothing
+pending" — without which a caller adjusting a limit twice would compute the second change from the
+value the first has already replaced.
+
+`Export()` and `Import()` move raw collection dumps and are answered unparsed: their shape belongs to
+each module's own storage. Exporting EKM requires a passphrase, since it carries key material itself.
 
 ### Signing
 

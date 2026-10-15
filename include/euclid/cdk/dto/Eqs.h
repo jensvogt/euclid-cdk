@@ -194,6 +194,21 @@ namespace Euclid::CDK::EQS {
     };
 
     /**
+     * @brief What replacing a message's body came to.
+     *
+     * @par
+     * "previousSize" is the point of the answer: the one thing a caller cannot check afterwards is
+     * what it replaced.
+     */
+    struct EUCLID_CDK_API UpdateMessageBodyResult {
+        std::string messageId;
+        std::string queueErn;
+        long size{};
+        long previousSize{};
+        std::string contentType;
+    };
+
+    /**
      * @brief One queue a redrive put messages back on, and how many went there.
      */
     struct EUCLID_CDK_API RedriveTarget {
@@ -292,6 +307,12 @@ namespace Euclid::CDK::EQS {
      */
     [[nodiscard]]
     EUCLID_CDK_API MaxMessageLengthResult ToMaxMessageLengthResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads an update-message-body response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API UpdateMessageBodyResult ToUpdateMessageBodyResult(const boost::json::value &value);
 
     /**
      * @brief Reads one queue a redrive put messages back on.

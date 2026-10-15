@@ -97,6 +97,20 @@ namespace Euclid::CDK::ENS {
         return {.ern = Json::Text(value, "ern"), .retentionPeriod = Json::Number(value, "retentionPeriod")};
     }
 
+    UpdateMessageBodyResult ToUpdateMessageBodyResult(const boost::json::value &value) {
+        return {
+                .messageId = Json::Text(value, "messageId"),
+                .topicErn = Json::Text(value, "topicErn"),
+                .size = Json::Number(value, "size"),
+                .previousSize = Json::Number(value, "previousSize"),
+                .contentType = Json::Text(value, "contentType"),
+        };
+    }
+
+    DeleteAfterDeliveryResult ToDeleteAfterDeliveryResult(const boost::json::value &value) {
+        return {.ern = Json::Text(value, "ern"), .deleteAfterDelivery = Json::Flag(value, "deleteAfterDelivery")};
+    }
+
     MessageCount ToMessageCount(const boost::json::value &value) {
         return {
                 .ern = Json::Text(value, "ern"),

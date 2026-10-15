@@ -367,6 +367,85 @@ BOOST_AUTO_TEST_SUITE(EapRunningTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EapNodeTest)
+
+    // A node is not configured here: a worker announces itself and renews on a lease, so what
+    // comes back is a snapshot of what each last said about itself.
+    BOOST_AUTO_TEST_CASE(ListsTheNodesWithoutAskingWhatTheyRun) {
+        const auto listed = boost::json::serialize(boost::json::object{
+                {"nodes", boost::json::array{
+                                  boost::json::object{{"name", "worker-1"}, {"address", "10.0.0.11"},
+                                                      {"principal", "node-worker-1"},
+                                                      {"labels", boost::json::object{{"zone", "a"}}},
+                                                      {"cpuCount", 8}, {"loadAverage", 1.75},
+                                                      {"version", "1.4.0"}, {"os", "linux"}, {"arch", "x86_64"},
+                                                      {"drained", false}, {"live", true},
+                                                      {"lastSeen", "2026-10-15T08:00:00Z"}},
+                                  boost::json::object{{"name", "worker-2"}, {"drained", true}, {"live", true}}}},
+                {"total", 2}});
+        const EapClient client(Test::Answering(listed));
+
+        const auto nodes = client.eap.ListNodes();
+
+        BOOST_REQUIRE(nodes.size() == 2U);
+        BOOST_TEST(nodes[0].name == "worker-1");
+        BOOST_TEST(nodes[0].cpuCount == 8L);
+        BOOST_TEST(nodes[0].labels.at("zone") == "a");
+        BOOST_TEST(nodes[0].live);
+        BOOST_TEST(!nodes[0].drained);
+        // A listing does not ask what a node is running - that is the one thing not on its record.
+        BOOST_TEST(nodes[0].applications.empty());
+        // Draining and being live are independent: a drained node keeps what it runs and keeps
+        // renewing, and is only refused new placements.
+        BOOST_TEST(nodes[1].drained);
+        BOOST_TEST(nodes[1].live);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "list-nodes");
+    }
+
+    // A load average of 1.75 is a real reading; reading it as a long would report it as one, and
+    // a reading of 0.5 as nothing at all.
+    BOOST_AUTO_TEST_CASE(ReadsTheLoadAverageAsAReal) {
+        const EapClient client(Test::Answering(R"({"nodes": [{"name": "worker-1", "loadAverage": 0.5}], "total": 1})"));
+
+        BOOST_TEST(client.eap.ListNodes()[0].loadAverage == 0.5, boost::test_tools::tolerance(0.0001));
+    }
+
+    BOOST_AUTO_TEST_CASE(DescribesOneNodeWithWhatItIsHoldingSlotsFor) {
+        const auto answer = boost::json::serialize(boost::json::object{
+                {"name", "worker-1"},
+                {"live", true},
+                {"applications", boost::json::array{boost::json::object{
+                                         {"applicationId", "order-service"},
+                                         {"runtimeName", "order-service-a1b2"},
+                                         {"namespace", "production"},
+                                         {"runtime", "BINARY"},
+                                         {"instances", 4},
+                                         {"running", 0}}}}});
+        const EapClient client(Test::Answering(answer));
+
+        const auto node = client.eap.GetNode("worker-1");
+
+        BOOST_REQUIRE(node.applications.size() == 1U);
+        BOOST_TEST(node.applications[0].applicationId == "order-service");
+        BOOST_TEST(node.applications[0].nameSpace == "production");
+        // Slots held and slots serving, both - a node holding four and running none is the state
+        // worth seeing, and one count cannot say it.
+        BOOST_TEST(node.applications[0].instances == 4L);
+        BOOST_TEST(node.applications[0].running == 0L);
+        BOOST_TEST(lastBody(client.gateway).at("node").as_string() == "worker-1");
+    }
+
+    BOOST_AUTO_TEST_CASE(DeletesANodesRegistration) {
+        const EapClient client(Test::Answering(R"({"node": "worker-1", "deleted": true})"));
+
+        client.eap.DeleteNode("worker-1");
+
+        BOOST_TEST(lastBody(client.gateway).at("node").as_string() == "worker-1");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "delete-node");
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EapLoggingTest)
 
     BOOST_AUTO_TEST_CASE(SetsWhatOneApplicationLogsAt) {

@@ -71,11 +71,14 @@ set(EUCLID_CDK_SOURCES
         src/auth/SigV4.cpp
         src/auth/SigningScheme.cpp
         src/dto/Com.cpp
+        src/dto/Ead.cpp
         src/dto/Eag.cpp
         src/dto/Eam.cpp
         src/dto/Eap.cpp
+        src/dto/Ees.cpp
         src/dto/Ekm.cpp
         src/dto/Ekv.cpp
+        src/dto/Emm.cpp
         src/dto/Emo.cpp
         src/dto/Ens.cpp
         src/dto/Eqs.cpp
@@ -83,12 +86,15 @@ set(EUCLID_CDK_SOURCES
         src/dto/Ess.cpp
         src/dto/Ets.cpp
         src/dto/Page.cpp
+        src/ead/Ead.cpp
         src/eag/Eag.cpp
         src/eam/Eam.cpp
         src/eam/Session.cpp
         src/eap/Eap.cpp
+        src/ees/Ees.cpp
         src/ekm/Ekm.cpp
         src/ekv/Ekv.cpp
+        src/emm/Emm.cpp
         src/emo/Emo.cpp
         src/emo/MeterRegistry.cpp
         src/ens/Ens.cpp
@@ -111,11 +117,14 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/auth/SigV4.h
         include/euclid/cdk/auth/SigningScheme.h
         include/euclid/cdk/dto/Com.h
+        include/euclid/cdk/dto/Ead.h
         include/euclid/cdk/dto/Eag.h
         include/euclid/cdk/dto/Eam.h
         include/euclid/cdk/dto/Eap.h
+        include/euclid/cdk/dto/Ees.h
         include/euclid/cdk/dto/Ekm.h
         include/euclid/cdk/dto/Ekv.h
+        include/euclid/cdk/dto/Emm.h
         include/euclid/cdk/dto/Emo.h
         include/euclid/cdk/dto/Ens.h
         include/euclid/cdk/dto/Eqs.h
@@ -123,12 +132,15 @@ set(EUCLID_CDK_HEADERS
         include/euclid/cdk/dto/Ess.h
         include/euclid/cdk/dto/Ets.h
         include/euclid/cdk/dto/Page.h
+        include/euclid/cdk/ead/Ead.h
         include/euclid/cdk/eag/Eag.h
         include/euclid/cdk/eam/Eam.h
         include/euclid/cdk/eam/Session.h
         include/euclid/cdk/eap/Eap.h
+        include/euclid/cdk/ees/Ees.h
         include/euclid/cdk/ekm/Ekm.h
         include/euclid/cdk/ekv/Ekv.h
+        include/euclid/cdk/emm/Emm.h
         include/euclid/cdk/emo/Emo.h
         include/euclid/cdk/emo/MeterRegistry.h
         include/euclid/cdk/ens/Ens.h

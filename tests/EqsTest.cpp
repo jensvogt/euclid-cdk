@@ -482,6 +482,51 @@ BOOST_AUTO_TEST_SUITE(EqsMessageTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EqsMessageBodyTest)
+
+    // Correcting something already queued without deleting it and sending it again - which would
+    // lose its position and mint a new id that whatever recorded the old one would never find.
+    BOOST_AUTO_TEST_CASE(ReplacesABodyAndSaysWhatItReplaced) {
+        const EqsClient client(Test::Answering(R"({"messageId": "m-1", "queueErn": "ern:queue/orders",
+                                                   "size": 44, "previousSize": 128,
+                                                   "contentType": "application/json"})"));
+
+        const auto updated = client.eqs.UpdateMessageBody("m-1", R"({"orderId": 4711})");
+
+        BOOST_TEST(updated.messageId == "m-1");
+        BOOST_TEST(updated.size == 44L);
+        // The one thing a caller cannot check afterwards is what it replaced.
+        BOOST_TEST(updated.previousSize == 128L);
+        BOOST_TEST(updated.contentType == "application/json");
+
+        const auto body = lastBody(client.gateway);
+        // The message id says which queue this is without naming it.
+        BOOST_TEST(body.at("messageId").as_string() == "m-1");
+        BOOST_TEST(body.at("body").as_string() == R"({"orderId": 4711})");
+        BOOST_TEST(!body.as_object().contains("ern"));
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "update-message-body");
+    }
+
+    // The new body is measured against the queue's own maximum, not the installation's, so a queue
+    // narrower than the default refuses here what it would have refused on the way in.
+    BOOST_AUTO_TEST_CASE(CarriesTheQueuesOwnLimitWhenTheBodyIsTooLong) {
+        const FakeGateway gateway(Test::Authenticated([](const Request &) {
+            return FakeGateway::Json(400, R"({"error": "message is 9000 bytes, and this queue accepts 4096"})");
+        }));
+        const auto session = Test::Builder(gateway).Login();
+        const EQS::Eqs eqs(session);
+
+        try {
+            std::ignore = eqs.UpdateMessageBody("m-1", std::string(9000, 'x'));
+            BOOST_FAIL("expected a ServiceError");
+        } catch (const ServiceError &ex) {
+            BOOST_TEST(ex.Status() == 400);
+            BOOST_TEST(ex.Reason() == "message is 9000 bytes, and this queue accepts 4096");
+        }
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EqsLongPollTest)
 
     // A receive is a write, and one that takes nothing is work the server did for nothing.
