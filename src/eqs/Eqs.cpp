@@ -258,6 +258,10 @@ namespace Euclid::CDK::EQS {
         std::ignore = Call("set-message-visibility", {{"messageId", messageId}, {"visibility", visibility}});
     }
 
+    UpdateMessageBodyResult Eqs::UpdateMessageBody(const std::string &messageId, const std::string &body) const {
+        return ToUpdateMessageBodyResult(Call("update-message-body", {{"messageId", messageId}, {"body", body}}));
+    }
+
     MessageAttribute Eqs::GetMessageAttribute(const std::string &messageId, const std::string &name) const {
         return ToMessageAttribute(Call("get-message-attribute", {{"messageId", messageId}, {"name", name}}));
     }

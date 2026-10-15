@@ -660,24 +660,16 @@ namespace Euclid::CDK::EQS {
         void SetMessageVisibility(const std::string &messageId, long visibility) const;
 
         /**
-         * @brief Replaces a message's body where it lies.
+         * @brief Replaces the body of a message already on the queue.
          *
          * @par
-         * The message keeps its id, its place in the queue and its attributes; only the body and the
-         * size change. For correcting something already queued without deleting it and sending it
-         * again - which would lose its position and mint a new id that whatever recorded the old one
-         * would never find.
+         * The whole body, not part of it - a message body is opaque to euclid, so there is nothing
+         * that could merge two of them. The message keeps its ID, status, priority, visibility and
+         * attributes; the body, its size and its content type are what change.
          *
          * @par
-         * The new body is measured against the queue's own maximum, not the installation's, so a
-         * queue narrower than the default refuses here what it would have refused on the way in.
-         *
-         * @param messageId the message, which says which queue this is without naming it.
-         * @param body      the new body.
-         * @return what it is now, and UpdateMessageBodyResult::previousSize for what it was.
-         * @throws ServiceError 400 if the body is longer than the queue accepts, 403 without a grant
-         * on the queue the message is in, 404 if there is no such message - including a message
-         * deleted or swept by retention between the call and the write.
+         * The queue's maximum message length applies exactly as it does to SendMessage(), so a body
+         * that could not have been sent cannot be reached by sending something short and growing it.
          */
         [[nodiscard]]
         UpdateMessageBodyResult UpdateMessageBody(const std::string &messageId, const std::string &body) const;

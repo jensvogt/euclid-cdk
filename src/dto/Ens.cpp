@@ -36,6 +36,16 @@ namespace Euclid::CDK::ENS {
         };
     }
 
+    UpdateMessageBodyResult ToUpdateMessageBodyResult(const boost::json::value &value) {
+        return {
+                .messageId = Json::Text(value, "messageId"),
+                .topicErn = Json::Text(value, "topicErn"),
+                .size = Json::Number(value, "size"),
+                .previousSize = Json::Number(value, "previousSize"),
+                .contentType = Json::Text(value, "contentType"),
+        };
+    }
+
     MessageAttribute ToMessageAttribute(const boost::json::value &value) {
         return {
                 .messageId = Json::Text(value, "messageId"),

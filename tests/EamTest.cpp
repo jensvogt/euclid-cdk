@@ -306,6 +306,42 @@ BOOST_AUTO_TEST_SUITE(EamSessionTest)
         BOOST_TEST(!body.contains("name"));
     }
 
+    BOOST_AUTO_TEST_CASE(ChangingYourOwnPasswordNamesNobody) {
+        const FakeGateway gateway(gatewayHandler("{}"));
+        const auto session = builder(gateway).Login();
+
+        session.ChangePassword("old-one", "new-one");
+
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "change-password");
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("oldPassword").as_string() == "old-one");
+        BOOST_TEST(body.at("newPassword").as_string() == "new-one");
+
+        // An absent userId is what tells the server this is the change rather than the reset.
+        BOOST_TEST(!body.as_object().contains("userId"));
+    }
+
+    BOOST_AUTO_TEST_CASE(ResettingSomebodyElsesPasswordNamesThemAndSendsNoOldOne) {
+        const FakeGateway gateway(gatewayHandler("{}"));
+        const auto session = builder(gateway).Login();
+
+        session.ResetPassword("jill", "new-one");
+
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("userId").as_string() == "jill");
+        BOOST_TEST(body.at("newPassword").as_string() == "new-one");
+        BOOST_TEST(!body.as_object().contains("oldPassword"));
+    }
+
+    // The server reads a request naming yourself as the change, and would refuse this one for the
+    // old password it did not get - a confusing way to learn you wanted the other method.
+    BOOST_AUTO_TEST_CASE(ResettingYourOwnPasswordIsRefusedBeforeItIsSent) {
+        const FakeGateway gateway(gatewayHandler("{}"));
+        const auto session = builder(gateway).Login();
+
+        BOOST_CHECK_THROW(session.ResetPassword(session.UserId(), "new-one"), EuclidError);
+    }
+
     BOOST_AUTO_TEST_CASE(ReadsACreatedAccessKey) {
         const FakeGateway gateway(gatewayHandler(R"({"accessKeyId": "AKIANEW", "secretAccessKey": "s3cr3t", "createdAt": "2026-09-12T10:00:00Z"})"));
         const auto session = builder(gateway).Login();
