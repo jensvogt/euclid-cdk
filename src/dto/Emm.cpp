@@ -92,6 +92,50 @@ namespace Euclid::CDK::EMM {
         };
     }
 
+    Backup ToBackup(const boost::json::value &value) {
+        return {
+                .name = Json::Text(value, "name"),
+                .path = Json::Text(value, "path"),
+                .accountId = Json::Text(value, "accountId"),
+                // "namespace" on the wire, as in EAP, ETS, EAG and EAD.
+                .nameSpace = Json::Text(value, "namespace"),
+                .startedAt = Json::Text(value, "startedAt"),
+                .modified = Json::Text(value, "modified"),
+                .size = Json::Number(value, "size"),
+                .complete = Json::Flag(value, "complete"),
+        };
+    }
+
+    BackupsResult ToBackupsResult(const boost::json::value &value) {
+
+        BackupsResult result{
+                .directory = Json::Text(value, "directory"),
+                // Defaulted true, which is what the server's own default is: a server that said
+                // nothing is one where the schedule runs.
+                .enabled = Json::Flag(value, "enabled", true),
+                .schedule = Json::Text(value, "schedule"),
+                .keep = Json::Number(value, "keep"),
+                .full = Json::Flag(value, "full"),
+                .encrypted = Json::Flag(value, "encrypted"),
+                .backups = {},
+        };
+
+        for (const auto &document: Json::Documents(value, "backups")) {
+            result.backups.push_back(ToBackup(document));
+        }
+        return result;
+    }
+
+    BackupStarted ToBackupStarted(const boost::json::value &value) {
+        return {
+                .name = Json::Text(value, "name"),
+                .directory = Json::Text(value, "directory"),
+                .startedAt = Json::Text(value, "startedAt"),
+                .full = Json::Flag(value, "full"),
+                .encrypted = Json::Flag(value, "encrypted"),
+        };
+    }
+
     ModuleStateResult ToModuleStateResult(const boost::json::value &value) {
         return {
                 .name = Json::Text(value, "name"),

@@ -24,6 +24,49 @@ namespace Euclid::CDK::EMO {
     inline constexpr std::string_view Target = "emo";
 
     /**
+     * @brief Which alert states to list.
+     */
+    struct EUCLID_CDK_API ListAlertsOptions {
+
+        /**
+         * @brief Only the series of this rule, or empty for all of them.
+         */
+        std::string ruleId;
+
+        /**
+         * @brief Only series in this state - LevelWarning and its siblings - or empty for any.
+         */
+        std::string state;
+
+        /**
+         * @brief Leave out what is healthy, which is what a "what is wrong right now" view wants.
+         */
+        bool activeOnly{false};
+    };
+
+    /**
+     * @brief Which part of the alert history to read.
+     */
+    struct EUCLID_CDK_API AlertHistoryOptions {
+
+        /**
+         * @brief Only this rule's transitions, or empty for all of them.
+         */
+        std::string ruleId;
+
+        /**
+         * @brief ISO 8601; empty leaves that end of the window open.
+         */
+        std::string from;
+        std::string to;
+
+        /**
+         * @brief At most this many, most recent first.
+         */
+        long limit{100};
+    };
+
+    /**
      * @brief EMO - euclid's monitoring module: the metrics an installation keeps, and the way an
      * application adds its own to them.
      *
@@ -114,6 +157,156 @@ namespace Euclid::CDK::EMO {
          */
         [[nodiscard]]
         double Average(const MetricQuery &query = {}) const;
+
+        /**
+         * @brief What metric names the installation has seen, and what shape each is.
+         *
+         * @par
+         * The catalogue behind a query rather than the rows: what names exist, which labels they
+         * carry and how many series each has. What a chooser needs before it can offer a query at
+         * all, and the honest answer to "what is being recorded" - which nothing else gives,
+         * because a listing can only confirm what it was already asked about.
+         *
+         * @par
+         * Administrator-only, as List() is.
+         *
+         * @param hours how far back to look; at least 1. A name last seen before that is not
+         * listed, so this is the live catalogue rather than everything ever pushed.
+         * @param prefix only names starting with this, or empty for all of them.
+         * @throws EuclidError if hours is below 1, which the server refuses anyway.
+         */
+        [[nodiscard]]
+        std::vector<MetricInfo> ListMetrics(long hours = 24, const std::string &prefix = {}) const;
+
+        // -- alert rules ------------------------------------------------------------------------
+
+        /**
+         * @brief Defines a rule that watches a metric.
+         *
+         * @par
+         * A rule names a metric and optionally labels that narrow it, and is measured once per step
+         * of its resolution. The period counts are what keep one noisy step from raising an alert -
+         * see AlertRule::forPeriods.
+         *
+         * @par
+         * Both thresholds are optional and independent: a rule may warn without ever going critical.
+         * Leaving both unset is refused, since such a rule can never fire.
+         *
+         * @param rule the rule; AlertRule::ruleId names it.
+         * @throws ServiceError 400 if the rule is not coherent, 409 if the account already has a
+         * rule of that ID, and 400 if the rule would cover more series than the installation allows
+         * one rule to watch.
+         */
+        [[nodiscard]]
+        AlertRule CreateAlertRule(const AlertRule &rule) const;
+
+        /**
+         * @brief Changes a rule. Only the fields present in `rule` change.
+         *
+         * @par
+         * Read the rule, change what you mean, send it back - the server merges onto what is stored,
+         * so a default-constructed AlertRule with only a ruleId and a threshold changes that
+         * threshold alone. AlertRule::labels is replaced wholesale when it is given at all, because
+         * a label set is one value rather than a set of fields.
+         *
+         * @par
+         * Changing the metric name or the labels moves the rule to other series, and the alert
+         * states of the ones it used to watch are retired rather than left behind.
+         *
+         * @throws ServiceError 400 if the result is not coherent, 404 if there is no such rule.
+         */
+        [[nodiscard]]
+        AlertRule UpdateAlertRule(const AlertRule &rule) const;
+
+        /**
+         * @brief Removes a rule, and the alert states of every series it watched.
+         *
+         * @throws ServiceError 404 if there is no such rule.
+         */
+        void DeleteAlertRule(const std::string &ruleId) const;
+
+        /**
+         * @brief The account's alert rules.
+         *
+         * @param ruleId only this one, or empty for all of them.
+         */
+        [[nodiscard]]
+        std::vector<AlertRule> ListAlertRules(const std::string &ruleId = {}) const;
+
+        /**
+         * @brief Where each watched series stands now - one entry per series, not per rule.
+         *
+         * @par
+         * A rule covering forty series has forty entries here, because the state is the series'
+         * rather than the rule's.
+         *
+         * @param options which rule, which state, and whether to leave out what is healthy.
+         */
+        [[nodiscard]]
+        std::vector<Alert> ListAlerts(const ListAlertsOptions &options = {}) const;
+
+        /**
+         * @brief Every change of state, most recent first.
+         *
+         * @par
+         * What ListAlerts() cannot answer: an alert that fired and cleared while nobody was looking
+         * leaves nothing in the current state and a pair of entries here.
+         *
+         * @param options which rule, which window, and how many.
+         */
+        [[nodiscard]]
+        std::vector<AlertTransition> ListAlertHistory(const AlertHistoryOptions &options = {}) const;
+
+        // -- dashboards -------------------------------------------------------------------------
+
+        /**
+         * @brief Saves a dashboard layout under a name, replacing one of that name.
+         *
+         * @par
+         * The layout is any JSON object and EMO does not interpret it - panels, queries and
+         * arrangement belong to whatever draws them. Re-saving keeps the original creation time, so
+         * an edited dashboard does not look new.
+         *
+         * @par
+         * Dashboards belong to the user that saved them: this session's own, with no way to name
+         * another.
+         *
+         * @param name   what to save it as.
+         * @param layout the layout.
+         * @throws ServiceError 400 if the name is empty.
+         */
+        [[nodiscard]]
+        Dashboard SaveDashboard(const std::string &name, const boost::json::object &layout) const;
+
+        /**
+         * @brief One dashboard, with its layout.
+         *
+         * @throws ServiceError 404 if this user has no dashboard of that name.
+         */
+        [[nodiscard]]
+        Dashboard GetDashboard(const std::string &name) const;
+
+        /**
+         * @brief This user's dashboards, names and times only - Dashboard::layout is empty.
+         */
+        [[nodiscard]]
+        std::vector<Dashboard> ListDashboards() const;
+
+        /**
+         * @brief Deletes one of this user's dashboards.
+         *
+         * @throws ServiceError 404 if there is no dashboard of that name.
+         */
+        void DeleteDashboard(const std::string &name) const;
+
+    private:
+
+        /**
+         * @brief An alert rule as a payload: everything for a create, only what was set for an
+         * update.
+         */
+        [[nodiscard]]
+        static boost::json::object RuleFields(const AlertRule &rule, bool whole);
     };
 
 }// namespace Euclid::CDK::EMO

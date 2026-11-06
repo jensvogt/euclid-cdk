@@ -205,6 +205,182 @@ BOOST_AUTO_TEST_SUITE(EmoClientTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EmoAlertTest)
+
+    BOOST_AUTO_TEST_CASE(ListsTheMetricCatalogue) {
+        const EmoClient client(Test::Answering(R"({"items": [{"name": "orders.received", "type": "RATE",
+                                                              "series": 4, "labelNames": ["host", "queue"],
+                                                              "lastSeen": "2026-11-06T08:00:00Z"}], "total": 1})"));
+
+        const auto metrics = client.emo.ListMetrics(6, "orders.");
+
+        BOOST_REQUIRE(metrics.size() == 1U);
+        BOOST_TEST(metrics[0].name == "orders.received");
+        BOOST_TEST(metrics[0].series == 4L);
+        BOOST_REQUIRE(metrics[0].labelNames.size() == 2U);
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("hours").as_int64() == 6);
+        BOOST_TEST(body.at("prefix").as_string() == "orders.");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "list-metrics");
+    }
+
+    BOOST_AUTO_TEST_CASE(RefusesAWindowTheServerWouldRefuse) {
+        const EmoClient client(Test::Answering(R"({"items": []})"));
+        BOOST_CHECK_THROW(std::ignore = client.emo.ListMetrics(0), EuclidError);
+    }
+
+    // A create sends the whole rule, thresholds included - and an unset threshold goes as null,
+    // which is how the server is told there is no threshold at that level.
+    BOOST_AUTO_TEST_CASE(CreatingSendsTheWholeRuleAndNullsAnUnsetThreshold) {
+        const EmoClient client(Test::Answering(R"({"ruleId": "orders-slow", "name": "orders.latency",
+                                                   "critical": 500.0, "forPeriods": 3, "enabled": true})"));
+
+        const auto created = client.emo.CreateAlertRule({.ruleId = "orders-slow",
+                                                         .name = "orders.latency",
+                                                         .resolution = std::string(EMO::ResolutionRaw),
+                                                         .statistic = std::string(EMO::StatisticMax),
+                                                         .comparison = std::string(EMO::ComparisonAbove),
+                                                         .critical = 500.0,
+                                                         .forPeriods = 3});
+
+        BOOST_REQUIRE(created.critical.has_value());
+        BOOST_TEST(*created.critical == 500.0, boost::test_tools::tolerance(0.001));
+        BOOST_TEST(!created.warning.has_value());
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("ruleId").as_string() == "orders-slow");
+        BOOST_TEST(body.at("statistic").as_string() == "max");
+        BOOST_TEST(body.at("critical").as_double() == 500.0, boost::test_tools::tolerance(0.001));
+        // Unset, and null is how that is said - not absent, which would read the same only by luck.
+        BOOST_REQUIRE(body.as_object().contains("warning"));
+        BOOST_TEST(body.at("warning").is_null());
+        BOOST_TEST(body.at("forPeriods").as_int64() == 3);
+    }
+
+    // An update merges onto what is stored, so a field that says nothing has to stay away or it
+    // would overwrite what is there with a default.
+    BOOST_AUTO_TEST_CASE(UpdatingSendsOnlyWhatWasSet) {
+        const EmoClient client(Test::Answering(R"({"ruleId": "orders-slow", "critical": 800.0})"));
+
+        std::ignore = client.emo.UpdateAlertRule({.ruleId = "orders-slow", .critical = 800.0});
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("ruleId").as_string() == "orders-slow");
+        BOOST_TEST(body.at("critical").as_double() == 800.0, boost::test_tools::tolerance(0.001));
+        // Nothing else was named, so nothing else travels - including the warning threshold, where
+        // a null would have cleared it.
+        BOOST_TEST(!body.as_object().contains("warning"));
+        BOOST_TEST(!body.as_object().contains("name"));
+        BOOST_TEST(!body.as_object().contains("statistic"));
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "update-alert-rule");
+    }
+
+    // A rule that said nothing about its periods reads as one step rather than zero, which would
+    // raise and clear on every step.
+    BOOST_AUTO_TEST_CASE(ARuleThatSaysNothingAboutPeriodsReadsAsOne) {
+        const EmoClient client(Test::Answering(R"({"items": [{"ruleId": "orders-slow"}]})"));
+
+        const auto rules = client.emo.ListAlertRules();
+        BOOST_REQUIRE(rules.size() == 1U);
+        BOOST_TEST(rules[0].forPeriods == 1L);
+        BOOST_TEST(rules[0].clearPeriods == 1L);
+        BOOST_TEST(rules[0].enabled);
+    }
+
+    // One entry per series rather than per rule: a rule covering forty series has forty here,
+    // because the state belongs to the series.
+    BOOST_AUTO_TEST_CASE(ListsWhereEachWatchedSeriesStands) {
+        const EmoClient client(Test::Answering(R"({"items": [{"ruleId": "orders-slow", "name": "orders.latency",
+                                                              "labels": {"host": "a"}, "state": "CRITICAL",
+                                                              "severity": "critical", "value": 912.5,
+                                                              "since": "2026-11-06T07:00:00Z"}]})"));
+
+        const auto alerts = client.emo.ListAlerts({.activeOnly = true});
+
+        BOOST_REQUIRE(alerts.size() == 1U);
+        BOOST_TEST(alerts[0].state == std::string(EMO::LevelCritical));
+        BOOST_TEST(alerts[0].value == 912.5, boost::test_tools::tolerance(0.001));
+        BOOST_TEST(alerts[0].labels.at("host") == "a");
+        BOOST_TEST(lastBody(client.gateway).at("active").as_bool() == true);
+    }
+
+    // An alert that fired and cleared while nobody was looking leaves nothing in the current state
+    // and a pair of entries here.
+    BOOST_AUTO_TEST_CASE(ReadsTheHistoryAndLeavesAnOpenWindowOpen) {
+        const EmoClient client(Test::Answering(R"({"items": [{"ruleId": "orders-slow", "previous": "OK",
+                                                              "state": "WARNING", "value": 510.0,
+                                                              "threshold": 500.0, "reason": "above warning"}]})"));
+
+        const auto history = client.emo.ListAlertHistory({.ruleId = "orders-slow", .limit = 10});
+
+        BOOST_REQUIRE(history.size() == 1U);
+        BOOST_TEST(history[0].previous == std::string(EMO::LevelOk));
+        BOOST_TEST(history[0].state == std::string(EMO::LevelWarning));
+        BOOST_REQUIRE(history[0].threshold.has_value());
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("limit").as_int64() == 10);
+        // An empty bound is not a timestamp, so it stays away rather than being read as the epoch.
+        BOOST_TEST(!body.as_object().contains("from"));
+        BOOST_TEST(!body.as_object().contains("to"));
+    }
+
+    BOOST_AUTO_TEST_CASE(DeletesARule) {
+        const EmoClient client(Test::Answering("{}"));
+
+        client.emo.DeleteAlertRule("orders-slow");
+        BOOST_TEST(lastBody(client.gateway).at("ruleId").as_string() == "orders-slow");
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(EmoDashboardTest)
+
+    // EMO does not interpret a layout - panels and arrangement belong to whatever draws them - so
+    // what goes out is what came in.
+    BOOST_AUTO_TEST_CASE(SavesALayoutAndHandsItBack) {
+        const EmoClient client(Test::Answering(R"({"name": "ops", "userId": "jens",
+                                                   "modified": "2026-11-06T08:00:00Z"})"));
+
+        const boost::json::object layout{{"panels", boost::json::array{boost::json::object{{"metric", "orders.received"}}}}};
+        const auto saved = client.emo.SaveDashboard("ops", layout);
+
+        BOOST_TEST(saved.name == "ops");
+        // The answer carries no layout - it is the one just sent - so the client keeps it.
+        BOOST_REQUIRE(saved.layout.contains("panels"));
+        BOOST_TEST(lastBody(client.gateway).at("dashboard").at("panels").as_array().size() == 1U);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "save-dashboard");
+    }
+
+    BOOST_AUTO_TEST_CASE(ReadsALayoutBack) {
+        const EmoClient client(Test::Answering(R"({"name": "ops", "dashboard": {"panels": []},
+                                                   "created": "2026-11-01T08:00:00Z"})"));
+
+        const auto dashboard = client.emo.GetDashboard("ops");
+        BOOST_TEST(dashboard.name == "ops");
+        BOOST_REQUIRE(dashboard.layout.contains("panels"));
+    }
+
+    // Names and times only: sending every panel of every dashboard to draw a chooser is a waste
+    // of a wire.
+    BOOST_AUTO_TEST_CASE(AListingCarriesNoLayouts) {
+        const EmoClient client(Test::Answering(R"({"userId": "jens", "items": [{"name": "ops"}, {"name": "sales"}]})"));
+
+        const auto dashboards = client.emo.ListDashboards();
+        BOOST_REQUIRE(dashboards.size() == 2U);
+        BOOST_TEST(dashboards[0].layout.empty());
+    }
+
+    BOOST_AUTO_TEST_CASE(DeletesOne) {
+        const EmoClient client(Test::Answering("{}"));
+
+        client.emo.DeleteDashboard("ops");
+        BOOST_TEST(lastBody(client.gateway).at("name").as_string() == "ops");
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EmoRegistryTest)
 
     // A counter reports the step and starts again, which is what makes it a rate; a gauge reports

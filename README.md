@@ -70,8 +70,12 @@ auto session = EAM::Eam::ForServer(url)
                        .Login();
 ```
 
-The session covers users, groups, accounts, namespaces, roles, grants, access keys, passwords and
-metrics. The OIDC and SAML browser flows are the one part of EAM it does not wrap — those are
+The session covers users, groups, accounts, namespaces, roles, grants, access keys, passwords,
+email addresses and metrics. `ListMyAccounts()` answers the narrower question a client actually has
+— which accounts this session may work in — where `ListAccounts()` is the installation and
+administrator-only. `RefreshSession()` takes a fresh token on the strength of the current one and
+answers exactly what a login answers, but does **not** adopt it: replacing this session's token is a
+decision about the object rather than something a call that reads should take. The OIDC and SAML browser flows are the one part of EAM it does not wrap — those are
 redirects through an identity provider rather than calls a library makes. `Session::Call()` sends any
 action by name, both for those and for one that arrives in a later euclid than this SDK.
 
@@ -142,6 +146,36 @@ failed transiently, because a transfer is long and giving up on one part of it t
 everything already transferred. A download is tried in one request first and falls back to the
 multipart path when the server answers "too large", so a caller does not have to know which of the
 two an object needs. Everything else is one request at a time, like the session.
+
+#### Versions, lifecycle and archives
+
+A bucket can keep what a key used to hold, and move what nobody reads any more off the disk:
+
+```cpp
+std::ignore = esm.SetBucketVersioning(bucket.ern, true);
+std::ignore = esm.SetBucketLifecycle(bucket.ern, {{.id = "cold", .archiveAfterDays = 90, .restoreDays = 7}});
+```
+
+Versioning is off by default, because keeping every version costs disk for as long as the bucket
+exists. Turning it *off* leaves what was already kept, so `ListObjectVersions()` still reads it —
+and a key whose current object was deleted still lists its versions, which is what makes a deletion
+recoverable.
+
+Lifecycle rules say what to archive and when. They are **replaced** rather than merged, and the whole
+set is validated before any of it is stored, so a bucket never ends up with half a set. Rules decide
+what to archive, never what to bring back: `RestoreObject()` is the only way back, and it is
+*temporary* — `ObjectLifecycle::restoredUntil` is when it goes away again, which matters because a
+restore that expires while something is still reading looks exactly like the object vanishing.
+`ArchiveObject()` needs no rule; it is what an operator does to something they know is not wanted
+online.
+
+`StopBucket()` holds the bucket's **events** and leaves the objects alone — it is not a way to make a
+bucket read-only. Everything held goes out when it starts, so a bucket stopped for an hour delivers
+an hour of events at once.
+
+`VerifyObjects()` checks records against the files behind them — a stat per object, never the bytes —
+and finds the damage nothing else notices until a download fails. It pages: `VerifyResult::nextKey`
+is where the next pass starts.
 
 ### Queues and topics
 
@@ -323,6 +357,49 @@ application id is always sent, even though the server can infer it from a caller
 agree, and when they didn't, every report went to a pool that did not exist, answered `200`, and
 left the autoscaler blind. Everything else in this module is administrator-only.
 
+#### Nodes, egress and platforms
+
+Three further areas of `EAP::Eap`, each with its own caller in mind.
+
+**Nodes** are the hosts that run instances. A worker announces itself and renews on a lease:
+`RegisterNode()`, then `RenewNode()` on a timer. `RegisterNode()` is idempotent and that matters — a
+restarted worker has to come back as the node it was, or it abandons the instances it is still
+running. `RenewNode()` returns the **whole** set of instances assigned to the node, not what changed,
+so a worker reconciles against it; `AssignedInstance::revision` is what says an instance must be
+replaced rather than left alone. `DrainNode()` is deliberately **not** a stop: a drained node keeps
+what it runs and keeps renewing, and is only refused *new* placements, which is why draining is not
+an outage. `DeleteNode()` releases the name's binding to its principal, and is administrator-only for
+that reason.
+
+**Egress** is for an application calling the outside world:
+
+```cpp
+if (const auto permit = eap.AcquireEgressPermit("downloads.example.com"); permit.granted) {
+    // ... make the call ...
+    std::ignore = eap.ReleaseEgressPermit("downloads.example.com", permit.permitId);
+}
+```
+
+The point is that instances of one application share one budget — a limit kept in each process would
+be multiplied by the pool size, which is how a fleet gets itself blocked. **A refusal is an ordinary
+answer, not an exception**: branch on `granted` and wait `retryAfterMs`. `ReportEgressThrottled()`
+turns one instance's `429` into the whole pool backing off. `SetEgressLimit()`, `DeleteEgressLimit()`
+and `ListEgressSites()` are the administrative half; `EgressSite::limitsSet` is how to tell a site
+with limits of its own from one showing the installation default.
+
+**Platforms** are declarations with no application behind them — the shared queues, topics and
+buckets that exist for everything rather than for one application. `ApplyPlatform()` runs the same
+engine an application's declaration does, with `prune` deciding whether what the declaration no
+longer names is deleted or merely reported under `InfrastructureResult::kept`. `PlanPlatform()` and
+`PlanInfrastructure()` are the dry runs, and worth running before a release depends on a declaration:
+the lists include what a full reconcile would **delete**.
+
+`SetApplicationLimits()` sets the memory and CPU ceilings an instance runs under; `-1` leaves one
+alone and `0` removes it. It is deliberately not part of an application's revision, so setting a
+ceiling restarts nothing by itself. `RebalanceApplication()` asks for instances to be spread again
+after a node joins or is drained — and refuses a job, because a job's instance is a *run* of it and
+moving one would start it again.
+
 ### The API gateway
 
 `EAG::Eag` publishes a path to the outside world and says what answers it. The gateway routes by
@@ -440,6 +517,39 @@ A push that fails is counted in `FailedPublishes()` and dropped rather than retr
 twice is counted twice, and nothing here throws at the application, which does not stop because it
 could not say how it was doing.
 
+#### Alerts and dashboards
+
+`EMO::Emo` also holds the alerting:
+
+```cpp
+std::ignore = emo.CreateAlertRule({.ruleId = "orders-slow", .name = "orders.latency",
+                                   .statistic = std::string(EMO::StatisticMax),
+                                   .comparison = std::string(EMO::ComparisonAbove),
+                                   .critical = 500.0, .forPeriods = 3});
+```
+
+A rule watches a metric, optionally narrowed by labels, and is measured once per step of its
+resolution. The two thresholds are independent and optional — a rule may warn without ever going
+critical — and `forPeriods`/`clearPeriods` are what keep one noisy step from raising an alert.
+`noDataAfterPeriods` covers the case thresholds cannot: **a series that stops arriving looks healthy
+to anything that only tests thresholds**, so it gets its own level, `LevelNoData`.
+
+`CreateAlertRule()` sends the whole rule, and an unset threshold travels as `null` — that is how the
+server is told there is no threshold at that level. `UpdateAlertRule()` **merges**, so it sends only
+what you set: read the rule, change what you mean, send it back.
+
+`ListAlerts()` returns one entry *per series*, not per rule — a rule covering forty series has forty
+entries, because the state belongs to the series. `ListAlertHistory()` answers what the current state
+cannot: an alert that fired and cleared while nobody was looking leaves nothing in `ListAlerts()` and
+a pair of entries in the history.
+
+`ListMetrics()` is the catalogue behind a query — what names exist, which labels they carry, how many
+series each has. It is the honest answer to "what is being recorded", which a listing cannot give
+because it only confirms what it was already asked about.
+
+Dashboards (`SaveDashboard()`, `GetDashboard()`, `ListDashboards()`, `DeleteDashboard()`) store a
+layout as opaque JSON — EMO does not interpret it, and a listing carries names and times only.
+
 ### Watching what happens inside euclid
 
 `EES::Ees` is the way out of euclid's internal event bus for something that is not a module. Where a
@@ -513,6 +623,12 @@ Nothing here waits; the manager acts on its next reconcile. Two sentinels are wo
 which is not the same as one reporting no load, and the `desired…` limits read -1 for "nothing
 pending" — without which a caller adjusting a limit twice would compute the second change from the
 value the first has already replaced.
+
+`ListBackups()` and `CreateBackup()` cover the archives the installation writes on its own schedule —
+`BackupsResult` carries the schedule and retention as well as the files, so "why is there no backup
+from last night" is answerable without reading the server's config. `CreateBackup()` does **not**
+wait: it answers `202` with the name the archive will have, and `Backup::complete` false is a run
+interrupted mid-write, left visible rather than cleaned away.
 
 `Export()` and `Import()` move raw collection dumps and are answered unparsed: their shape belongs to
 each module's own storage. Exporting EKM requires a passphrase, since it carries key material itself.

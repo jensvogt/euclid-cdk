@@ -99,6 +99,19 @@ namespace Euclid::CDK::EAM {
         };
     }
 
+    MyAccounts ToMyAccounts(const boost::json::value &value) {
+
+        MyAccounts accounts{
+                .homeAccountId = Json::Text(value, "homeAccountId"),
+                .accounts = {},
+                .total = Json::Number(value, "total"),
+        };
+        for (const auto &document: Json::Documents(value, "accounts")) {
+            accounts.accounts.push_back(ToAccount(document));
+        }
+        return accounts;
+    }
+
     LoginResult ToLoginResult(const boost::json::value &value) {
         return {
                 .token = Json::Text(value, "token"),

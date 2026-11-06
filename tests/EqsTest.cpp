@@ -482,6 +482,28 @@ BOOST_AUTO_TEST_SUITE(EqsMessageTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EqsRetriesTest)
+
+    BOOST_AUTO_TEST_CASE(SetsHowManyReceivesBeforeTheDeadLetterQueue) {
+        const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders", "maxRetries": 5})"));
+
+        BOOST_TEST(client.eqs.SetQueueMaxRetries(kQueue, 5).maxRetries == 5L);
+        BOOST_TEST(lastBody(client.gateway).at("maxRetries").as_int64() == 5);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "set-queue-max-retries");
+    }
+
+    // One rather than zero is the floor: zero would send every message to the dead letter queue on
+    // its first receive, which is a queue nobody can consume from.
+    BOOST_AUTO_TEST_CASE(RefusesACountOutsideTheBoundsSqsHolds) {
+        const EqsClient client(Test::Answering("{}"));
+
+        BOOST_CHECK_THROW(std::ignore = client.eqs.SetQueueMaxRetries(kQueue, 0), EuclidError);
+        BOOST_CHECK_THROW(std::ignore = client.eqs.SetQueueMaxRetries(kQueue, EQS::MaxRetriesLimit + 1), EuclidError);
+        BOOST_TEST(client.gateway.Received().size() == 1U);// the login, and nothing else
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EqsMessageBodyTest)
 
     // Correcting something already queued without deleting it and sending it again - which would

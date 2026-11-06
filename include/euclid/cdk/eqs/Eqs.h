@@ -56,6 +56,12 @@ namespace Euclid::CDK::EQS {
     inline constexpr long InstallationMaxMessageLength = 0;
 
     /**
+     * @brief The most receives SetQueueMaxRetries() accepts, and the same figure AWS SQS holds
+     * maxReceiveCount to.
+     */
+    inline constexpr long MaxRetriesLimit = 1000;
+
+    /**
      * @brief The longest delay a queue may hold its messages for, in seconds.
      *
      * @par
@@ -495,6 +501,28 @@ namespace Euclid::CDK::EQS {
          * the same rule.
          * @throws EuclidError if the length is negative, which the server refuses anyway.
          */
+        /**
+         * @brief How many times a message may be received before the dead letter queue takes it.
+         *
+         * @par
+         * What makes a message that cannot be handled stop coming round again. The count is the
+         * message's own and is kept across receives; the limit is what it is measured against on the
+         * next one.
+         *
+         * @par
+         * So lowering the limit below a message's existing count does not move it now - it moves on
+         * its next receive. Nothing is reclassified by this call.
+         *
+         * @param ern        the queue.
+         * @param maxRetries between 1 and 1000, the bounds AWS SQS holds maxReceiveCount to. One is
+         * the floor rather than zero because zero would send every message to the dead letter queue
+         * on its first receive, which is a queue nobody can consume from.
+         * @throws EuclidError if the count is outside those bounds, which the server refuses anyway.
+         * ServiceError 404 if there is no such queue.
+         */
+        [[nodiscard]]
+        MaxRetriesResult SetQueueMaxRetries(const std::string &ern, long maxRetries) const;
+
         [[nodiscard]]
         MaxMessageLengthResult SetQueueMaxMessageLength(const std::string &ern, long maxMessageLength) const;
 
@@ -660,16 +688,24 @@ namespace Euclid::CDK::EQS {
         void SetMessageVisibility(const std::string &messageId, long visibility) const;
 
         /**
-         * @brief Replaces the body of a message already on the queue.
+         * @brief Replaces a message's body where it lies.
          *
          * @par
-         * The whole body, not part of it - a message body is opaque to euclid, so there is nothing
-         * that could merge two of them. The message keeps its ID, status, priority, visibility and
-         * attributes; the body, its size and its content type are what change.
+         * The message keeps its id, its place in the queue and its attributes; only the body and the
+         * size change. For correcting something already queued without deleting it and sending it
+         * again - which would lose its position and mint a new id that whatever recorded the old one
+         * would never find.
          *
          * @par
-         * The queue's maximum message length applies exactly as it does to SendMessage(), so a body
-         * that could not have been sent cannot be reached by sending something short and growing it.
+         * The new body is measured against the queue's own maximum, not the installation's, so a
+         * queue narrower than the default refuses here what it would have refused on the way in.
+         *
+         * @param messageId the message, which says which queue this is without naming it.
+         * @param body      the new body.
+         * @return what it is now, and UpdateMessageBodyResult::previousSize for what it was.
+         * @throws ServiceError 400 if the body is longer than the queue accepts, 403 without a grant
+         * on the queue the message is in, 404 if there is no such message - including a message
+         * deleted or swept by retention between the call and the write.
          */
         [[nodiscard]]
         UpdateMessageBodyResult UpdateMessageBody(const std::string &messageId, const std::string &body) const;

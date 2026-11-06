@@ -3,6 +3,7 @@
 #pragma once
 
 // C++ includes
+#include <chrono>
 #include <map>
 #include <optional>
 #include <string>
@@ -19,6 +20,7 @@
 #include <euclid/cdk/eam/Session.h>
 
 namespace Euclid::CDK::EAP {
+
 
     /**
      * @brief The module this client talks to - what travels in x-euclid-target.
@@ -89,6 +91,141 @@ namespace Euclid::CDK::EAP {
      * @brief The environment variable the manager hands every instance its own id in.
      */
     inline constexpr std::string_view InstanceIdVariable = "EUCLID_INSTANCE_ID";
+
+    /**
+     * @brief How long an egress permit holds its slot unless it says otherwise.
+     */
+    inline constexpr std::chrono::seconds DefaultEgressLease{900};
+
+    /**
+     * @brief The longest lease the server will grant; anything above is clamped to it.
+     */
+    inline constexpr std::chrono::seconds MaxEgressLease{6 * 3600};
+
+    /**
+     * @brief The platform a declaration is applied under when none is named.
+     */
+    inline constexpr std::string_view DefaultPlatform = "platform";
+
+    /**
+     * @brief What an application's type reads as.
+     *
+     * @par
+     * TypeJob matters to more than scheduling: a job's instance is a *run* of it, which is why
+     * RebalanceApplication() refuses one - moving a run would start it again.
+     */
+    inline constexpr std::string_view TypeProcess = "PROCESS";
+    inline constexpr std::string_view TypeJob = "JOB";
+
+    /**
+     * @brief The ceilings one instance of an application runs under; -1 leaves one as it stands.
+     *
+     * @par
+     * Zero removes a ceiling, which is a different thing from -1 leaving it alone. At least one of
+     * the two has to be given.
+     */
+    struct EUCLID_CDK_API ApplicationLimitOptions {
+
+        /**
+         * @brief Memory, in MiB. 0 removes the ceiling.
+         */
+        long memoryLimitMb{-1};
+
+        /**
+         * @brief CPU, in cores - 1.5 is a core and a half. 0 removes the ceiling.
+         */
+        double cpuLimit{-1.0};
+    };
+
+    /**
+     * @brief What a worker says about itself when it registers.
+     */
+    struct EUCLID_CDK_API RegisterNodeOptions {
+
+        /**
+         * @brief Where the manager can reach it.
+         */
+        std::string address;
+        std::string version;
+        std::string os;
+        std::string arch;
+
+        /**
+         * @brief Labels placement can select on.
+         */
+        std::map<std::string, std::string> labels;
+    };
+
+    /**
+     * @brief What a heartbeat carries about the machine.
+     *
+     * @par
+     * All of it optional, and all of it travelling on the heartbeat rather than in calls of its own:
+     * one request per node per tick is the point. Absent readings are recorded as idle, which is
+     * optimistic and the right direction - they only ever break a tie between nodes already running
+     * the same number of instances.
+     */
+    struct EUCLID_CDK_API RenewNodeOptions {
+
+        /**
+         * @brief The one-minute load average.
+         */
+        double loadAverage{};
+
+        /**
+         * @brief Installed memory, in MiB; 0 says nothing.
+         */
+        long memoryTotalMb{};
+
+        /**
+         * @brief Memory in use, in MiB; 0 says nothing.
+         */
+        long memoryUsedMb{};
+    };
+
+    /**
+     * @brief What a worker reports about one instance it is running.
+     */
+    struct EUCLID_CDK_API ReportInstanceOptions {
+
+        /**
+         * @brief The state it is in; empty means RUNNING.
+         */
+        std::string state;
+
+        /**
+         * @brief When the process started, ISO 8601.
+         */
+        std::string startedAt;
+
+        /**
+         * @brief Which machine it is on.
+         */
+        std::string host;
+
+        /**
+         * @brief The port it was given for its own HTTP listener.
+         */
+        long httpPort{};
+        long pid{};
+    };
+
+    /**
+     * @brief How long a permit is wanted for.
+     */
+    struct EUCLID_CDK_API EgressPermitOptions {
+
+        /**
+         * @brief How long the permit holds its slot if it is never released, in seconds. Clamped by
+         * the server to at most MaxEgressLease.
+         *
+         * @par
+         * This is a safety net rather than a plan: a permit that is released when the call finishes
+         * never reaches it. The lease is what stops a crashed instance holding a concurrency slot
+         * for ever.
+         */
+        std::chrono::seconds leaseSeconds{DefaultEgressLease};
+    };
 
     /**
      * @brief Everything a deployment says beyond what it runs and where the artifact is.
@@ -457,6 +594,177 @@ namespace Euclid::CDK::EAP {
         [[nodiscard]]
         Application GetApplication(const std::string &applicationId) const;
 
+        /**
+         * @brief Sets the memory and CPU ceilings one instance runs under.
+         *
+         * @par
+         * Applied as instances are replaced rather than at once - a ceiling is the cgroup a process
+         * is started in. Deliberately not part of an application's revision, so setting one
+         * restarts nothing by itself.
+         *
+         * @param applicationId the application.
+         * @param options       the ceilings; -1 leaves one as it stands, 0 removes it.
+         * @throws EuclidError if neither ceiling is given. ServiceError 400 if a value is out of
+         * range, 404 if there is no such application.
+         */
+        [[nodiscard]]
+        Application SetApplicationLimits(const std::string &applicationId, const ApplicationLimitOptions &options) const;
+
+        /**
+         * @brief Asks for an application's instances to be spread again over the nodes.
+         *
+         * @par
+         * For after a node joins or is drained, when the placement that was right when the pool
+         * started no longer is. Nothing moves when this is answered: the manager replaces instances
+         * over its next passes, so the pool keeps serving throughout.
+         *
+         * @throws ServiceError 400 if the application is a job - a job's instance is a *run* of it,
+         * and moving one would start it again. Also 404 if there is no such application.
+         */
+        [[nodiscard]]
+        RebalanceResult RebalanceApplication(const std::string &applicationId) const;
+
+        /**
+         * @brief What ApplyInfrastructure() would do, without doing it.
+         *
+         * @par
+         * The same engine and the same answer, with InfrastructureResult::dryRun true and nothing
+         * changed. Worth running before a release depends on a declaration, because the lists it
+         * returns include what a full reconcile would **delete**.
+         */
+        [[nodiscard]]
+        InfrastructureResult PlanInfrastructure(const std::string &applicationId) const;
+
+        // -- platforms ----------------------------------------------------------------------------
+
+        /**
+         * @brief Applies a declaration that belongs to no application.
+         *
+         * @par
+         * A platform is the shared half of an installation - the queues, topics and buckets that
+         * exist for everything rather than for one application. Applied by the same engine as an
+         * application's declaration, with three differences: it is handed over here rather than read
+         * from beside an artifact, since a platform has no artifact; it owns and never uses, having
+         * no principal to grant to; and what it owns is tagged with its own name.
+         *
+         * @param name        what the platform is managed under; DefaultPlatform when it is the
+         * only one.
+         * @param declaration the declaration itself.
+         * @param prune       whether to delete what this platform owns and the declaration no
+         * longer names. False leaves such resources alone and reports them under
+         * InfrastructureResult::kept.
+         * @throws ServiceError 400 if the name or the declaration will not do.
+         */
+        [[nodiscard]]
+        InfrastructureResult ApplyPlatform(const std::string &name, const boost::json::value &declaration,
+                                           bool prune = false) const;
+
+        /**
+         * @brief What ApplyPlatform() would do, without doing it.
+         */
+        [[nodiscard]]
+        InfrastructureResult PlanPlatform(const std::string &name, const boost::json::value &declaration,
+                                          bool prune = false) const;
+
+        /**
+         * @brief One platform record: what it owns, and the declaration it was applied from.
+         *
+         * @param name the platform; DefaultPlatform when none was named at apply time.
+         * @throws ServiceError 404 if there is no such platform.
+         */
+        [[nodiscard]]
+        Platform GetPlatform(const std::string &name = std::string(DefaultPlatform)) const;
+
+        /**
+         * @brief Every platform of this account and namespace.
+         */
+        [[nodiscard]]
+        std::vector<Platform> ListPlatforms() const;
+
+        // -- egress ------------------------------------------------------------------------------
+
+        /**
+         * @brief Asks permission to call an outside site, and waits for nobody.
+         *
+         * @par
+         * An application calls this about itself before reaching out to something that rate limits
+         * it. The point is that several instances of one application share one budget: a limit kept
+         * in each process would be multiplied by the pool size, which is how a fleet gets itself
+         * blocked.
+         *
+         * @par
+         * **A refusal is an ordinary answer, not an error** - EgressPermit::granted is the field to
+         * branch on, and EgressPermit::retryAfterMs is how long to wait. Being rate limited is not
+         * a fault.
+         *
+         * @param site    the host name about to be called.
+         * @param options how long the permit should hold its slot.
+         */
+        [[nodiscard]]
+        EgressPermit AcquireEgressPermit(const std::string &site, const EgressPermitOptions &options = {}) const;
+
+        /**
+         * @brief Gives a permit's slot back, as soon as the call it covered is done.
+         *
+         * @par
+         * The other half of AcquireEgressPermit(), and worth doing promptly: a slot held until its
+         * lease lapses is a slot no other instance can use meanwhile.
+         */
+        [[nodiscard]]
+        EgressRelease ReleaseEgressPermit(const std::string &site, const std::string &permitId) const;
+
+        /**
+         * @brief Says a site asked to be left alone, so that nothing else tries it meanwhile.
+         *
+         * @par
+         * For when a site answers 429 or 503 with a Retry-After: telling euclid turns one instance's
+         * refusal into the whole pool backing off, which is the difference between recovering and
+         * every instance discovering the same thing in turn.
+         *
+         * @param site              the host that refused.
+         * @param retryAfterSeconds how long it asked for; at least one second.
+         */
+        [[nodiscard]]
+        EgressThrottled ReportEgressThrottled(const std::string &site, long retryAfterSeconds = 60) const;
+
+        /**
+         * @brief Sets how fast an application may call one site.
+         *
+         * @param site          the host name, or "*" for every site this application calls.
+         * @param limits        the limits; at least one of the three has to say something.
+         * @param applicationId whose limits, or empty for the calling application's own.
+         * @throws ServiceError 400 if no limit is given, 503 if the egress state is momentarily
+         * busy - which is worth retrying rather than reporting.
+         */
+        [[nodiscard]]
+        EgressSite SetEgressLimit(const std::string &site, const EgressLimits &limits,
+                                  const std::string &applicationId = {}) const;
+
+        /**
+         * @brief Removes a site's own limits, putting it back under the installation's default.
+         *
+         * @throws ServiceError 404 if that site had no limit of its own - which
+         * EgressSite::limitsSet is how to tell beforehand.
+         */
+        [[nodiscard]]
+        EgressSite DeleteEgressLimit(const std::string &site, const std::string &applicationId = {}) const;
+
+        /**
+         * @brief Every site an application has called, and what applies to each.
+         *
+         * @param applicationId whose sites, or empty for the calling application's own.
+         */
+        [[nodiscard]]
+        EgressSites ListEgressSites(const std::string &applicationId = {}) const;
+
+        /**
+         * @brief Forgets a site entirely - its limits and the record that it was ever called.
+         *
+         * @par
+         * Unlike DeleteEgressLimit(), which leaves the site listed under the default limits.
+         */
+        void DeleteEgressSite(const std::string &site, const std::string &applicationId = {}) const;
+
         // -- nodes --------------------------------------------------------------------------------
 
         /**
@@ -506,6 +814,109 @@ namespace Euclid::CDK::EAP {
          * registered.
          */
         void DeleteNode(const std::string &node) const;
+
+        /**
+         * @brief Announces a node, or announces it again.
+         *
+         * @par
+         * The worker's side of the lease protocol, and the first call it makes. **Idempotent, and
+         * that matters**: a restarted worker has to come back as the node it was, or it abandons
+         * the instances it is still running.
+         *
+         * @par
+         * The name is bound to the principal that registered it, so another principal cannot take
+         * it over while the registration stands - DeleteNode() is the only way to release it.
+         *
+         * @param node    the name this worker is known by.
+         * @param options what it says about itself.
+         * @throws ServiceError 409 if the name is registered to another principal.
+         */
+        [[nodiscard]]
+        NodeRegistration RegisterNode(const std::string &node, const RegisterNodeOptions &options = {}) const;
+
+        /**
+         * @brief The heartbeat: renews the lease and collects what this node should be running.
+         *
+         * @par
+         * Called on a timer, well inside NodeRegistration::leaseSeconds - a lease that lapses is a
+         * node the manager stops placing on. One call does both jobs deliberately: a separate action
+         * for the machine's readings would be a second request per node per tick.
+         *
+         * @par
+         * NodeRenewal::instances is the **whole** set assigned to this node, not what changed, so a
+         * worker reconciles against it: start what is listed and not running, stop what is running
+         * and not listed. AssignedInstance::revision is what says an instance has to be replaced
+         * rather than left alone.
+         *
+         * @throws ServiceError 409 if the node is registered to another principal.
+         */
+        [[nodiscard]]
+        NodeRenewal RenewNode(const std::string &node, const RenewNodeOptions &options = {}) const;
+
+        /**
+         * @brief Stops new instances being placed on a node, or puts it back into service.
+         *
+         * @par
+         * **Not a stop.** A drained node keeps what it is running and keeps renewing, and is only
+         * refused *new* placements - so its instances leave as they are replaced rather than all at
+         * once. That is the whole difference between draining a node and stopping one, and it is why
+         * draining is not an outage.
+         *
+         * @param node    the node.
+         * @param drained false puts it back into service.
+         * @throws ServiceError 404 if no node of that name is registered.
+         */
+        [[nodiscard]]
+        DrainResult DrainNode(const std::string &node, bool drained = true) const;
+
+        /**
+         * @brief Gives one instance slot to a node.
+         *
+         * @par
+         * The operator's half of placement, for an installation with no automatic placement yet: the
+         * manager is told by hand which node a slot belongs to.
+         *
+         * @param runtimeName the pool the slot is in.
+         * @param instanceId  the slot.
+         * @param node        the node to give it to, or empty to take it back to the manager's own
+         * host - which is a legitimate thing to ask for, so empty and absent differ here.
+         * @throws ServiceError 404 if the node is not registered or there is no such instance, 409
+         * if the node is drained - a drained node is refused new assignments and keeps what it has.
+         */
+        [[nodiscard]]
+        InstanceAssignment AssignInstance(const std::string &runtimeName, const std::string &instanceId,
+                                          const std::string &node = {}) const;
+
+        /**
+         * @brief Reports what a worker has actually done with one slot.
+         *
+         * @par
+         * How the manager learns an instance is running, and on which host - the counterpart to
+         * RenewNode() telling the worker what it should be running.
+         *
+         * @throws ServiceError 409 if the slot belongs to another node.
+         */
+        void ReportNodeInstance(const std::string &runtimeName, const std::string &instanceId,
+                                const ReportInstanceOptions &options = {}) const;
+
+        /**
+         * @brief Takes the credentials one instance runs as.
+         *
+         * @par
+         * What a worker fetches before starting an instance, so that the application comes up as its
+         * own technical principal. Answered unparsed: it is a credentials bundle whose shape belongs
+         * to whatever consumes it, and writing it into a typed struct here would mean this SDK
+         * deciding what a credential is.
+         *
+         * @par
+         * Only the node holding that slot may ask, which is what makes the registration's binding of
+         * name to principal worth having.
+         *
+         * @throws ServiceError 403 if this caller does not hold the slot, 404 if there is no such
+         * pool or no application behind it, 409 if the slot belongs to another node.
+         */
+        [[nodiscard]]
+        boost::json::object IssueInstanceCredentials(const std::string &runtimeName, const std::string &instanceId) const;
 
         // -- infrastructure ---------------------------------------------------------------------
 
@@ -617,6 +1028,13 @@ namespace Euclid::CDK::EAP {
          */
         [[nodiscard]]
         Application ApplicationOf(const std::string &action, const boost::json::object &payload) const;
+
+        /**
+         * @brief The body apply-platform and plan-platform share.
+         */
+        [[nodiscard]]
+        static boost::json::object PlatformPayload(const std::string &name, const boost::json::value &declaration,
+                                                   bool prune);
     };
 
 }// namespace Euclid::CDK::EAP

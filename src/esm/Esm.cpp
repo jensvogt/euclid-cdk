@@ -224,6 +224,89 @@ namespace Euclid::CDK::ESM {
         return ToSetBucketInternalResult(Call("set-bucket-internal", {{"ern", ern}, {"internal", internal}}));
     }
 
+    BucketVersioningResult Esm::SetBucketVersioning(const std::string &ern, const bool enabled) const {
+        return ToBucketVersioningResult(Call("set-bucket-versioning", {{"ern", ern}, {"enabled", enabled}}));
+    }
+
+    ObjectVersions Esm::ListObjectVersions(const std::string &bucketErn, const std::string &key) const {
+        return ToObjectVersions(Call("list-object-versions", {{"bucketErn", bucketErn}, {"key", key}}));
+    }
+
+    long Esm::GetObjectSize(const std::string &bucketErn, const std::string &key) const {
+        return NumberOf("get-object-size", {{"bucketErn", bucketErn}, {"key", key}}, "size");
+    }
+
+    // -- lifecycle ----------------------------------------------------------------------------------
+
+    BucketLifecycle Esm::SetBucketLifecycle(const std::string &ern, const std::vector<LifecycleRule> &rules) const {
+
+        boost::json::array entries;
+        entries.reserve(rules.size());
+        for (const auto &rule: rules) {
+            entries.push_back(boost::json::object{
+                    {"id", rule.id},
+                    {"prefix", rule.prefix},
+                    {"archiveAfterDays", rule.archiveAfterDays},
+                    {"restoreDays", rule.restoreDays},
+                    {"enabled", rule.enabled},
+            });
+        }
+
+        return ToBucketLifecycle(Call("set-bucket-lifecycle", {{"ern", ern}, {"rules", std::move(entries)}}));
+    }
+
+    BucketLifecycle Esm::GetBucketLifecycle(const std::string &ern) const {
+        return ToBucketLifecycle(Call("get-bucket-lifecycle", {{"ern", ern}}));
+    }
+
+    BucketLifecycle Esm::DeleteBucketLifecycle(const std::string &ern) const {
+        return ToBucketLifecycle(Call("delete-bucket-lifecycle", {{"ern", ern}}));
+    }
+
+    ObjectLifecycle Esm::ArchiveObject(const std::string &bucketErn, const std::string &key) const {
+        return ToObjectLifecycle(Call("archive-object", {{"bucketErn", bucketErn}, {"key", key}}));
+    }
+
+    ObjectLifecycle Esm::RestoreObject(const std::string &bucketErn, const std::string &key, const long days) const {
+
+        // Said here rather than paying a round trip for the server's own refusal. Zero is not a
+        // mistake - it is what asks for the covering rule's own period - so only the range beyond
+        // it is checked.
+        if (days < 0 || days > MaxRestoreDays) {
+            throw EuclidError("days has to be from 0 to " + std::to_string(MaxRestoreDays) +
+                              "; zero takes the period of whichever rule covers the key");
+        }
+
+        const boost::json::object payload{{"bucketErn", bucketErn}, {"key", key}, {"days", days}};
+        return ToObjectLifecycle(Call("restore-object", payload));
+    }
+
+    // -- bucket state -------------------------------------------------------------------------------
+
+    BucketStateResult Esm::StopBucket(const std::string &ern) const {
+        return ToBucketStateResult(Call("stop-bucket", {{"ern", ern}}));
+    }
+
+    BucketStateResult Esm::StartBucket(const std::string &ern) const {
+        return ToBucketStateResult(Call("start-bucket", {{"ern", ern}}));
+    }
+
+    // -- checking -----------------------------------------------------------------------------------
+
+    VerifyResult Esm::VerifyObjects(const std::string &bucketErn, const VerifyOptions &options) const {
+
+        if (options.limit < 1 || options.limit > MaxVerifyLimit) {
+            throw EuclidError("limit has to be between 1 and " + std::to_string(MaxVerifyLimit));
+        }
+
+        const boost::json::object payload{
+                {"bucketErn", bucketErn},
+                {"afterKey", options.afterKey},
+                {"limit", options.limit},
+        };
+        return ToVerifyResult(Call("verify-objects", payload));
+    }
+
     SetBucketPriorityResult Esm::SetBucketPriority(const std::string &ern, const std::string &priority) const {
 
         // Sent even when empty, unlike CreateBucket above: here an empty priority is the instruction
@@ -444,6 +527,67 @@ namespace Euclid::CDK::ESM {
 
         CompleteDownload(download.downloadId);
         return download.size;
+    }
+
+    StoredObject Esm::UploadObject(const std::string &bucketErn, const std::string &key, const std::string_view data, const UploadOptions &options) const {
+
+        checkPartSize(options.partSize);
+
+        // One part is not a multipart upload - see UploadFile().
+        const auto size = static_cast<long>(data.size());
+        if (size < options.partSize) {
+            return PutObject(bucketErn, key, data,
+                             AttributeOptions{.attributes = options.attributes, .systemAttributes = options.systemAttributes});
+        }
+
+        const auto concurrency = std::max(1, options.concurrency);
+        const auto upload = CreateUpload(bucketErn, key, concurrency);
+
+        runBounded(partCount(size, options.partSize), concurrency, [&](const long index) {
+            const auto offset = index * options.partSize;
+            UploadPart(upload.uploadId, index + 1, std::string(data.substr(offset, std::min(options.partSize, size - offset))));
+        });
+
+        return CompleteUpload(upload.uploadId, options);
+    }
+
+    std::string Esm::DownloadObject(const std::string &bucketErn, const std::string &key, const long maxSize, const DownloadOptions &options) const {
+
+        checkPartSize(options.partSize);
+
+        // Answered as the server answers a get-object over its limit, so a caller handles an
+        // object too large for it the same way whichever path found out.
+        const auto tooLarge = [&](const long size) {
+            const boost::json::object body{{"error", "the object is " + std::to_string(size) + " bytes, larger than the "
+                                                     + std::to_string(maxSize) + " accepted"}};
+            return ServiceError(Target(), "get-object", PayloadTooLarge, boost::json::serialize(body));
+        };
+
+        // Tried in one request first, as DownloadFile() does.
+        if (auto single = GetObjectResponse(bucketErn, key, options.partSize); single.statusCode != PayloadTooLarge) {
+            if (!single.IsSuccess()) throw ServiceError(Target(), "get-object", single.statusCode, single.body);
+            if (maxSize > 0 && static_cast<long>(single.body.size()) > maxSize) throw tooLarge(static_cast<long>(single.body.size()));
+            return std::move(single.body);
+        }
+
+        const auto concurrency = std::max(1, options.concurrency);
+        const auto download = CreateDownload(bucketErn, key, concurrency);
+        if (maxSize > 0 && download.size > maxSize) {
+            CompleteDownload(download.downloadId);
+            throw tooLarge(download.size);
+        }
+
+        // Sized up front so that each part lands at its own offset whatever order they arrive in;
+        // the ranges do not overlap, so the workers need no lock between them.
+        std::string bytes(static_cast<std::size_t>(download.size), '\0');
+        runBounded(partCount(download.size, options.partSize), concurrency, [&](const long index) {
+            const auto part = DownloadPart(download.downloadId, index + 1, options.partSize);
+            const auto offset = static_cast<std::size_t>(index * options.partSize);
+            std::copy_n(part.data(), std::min(part.size(), bytes.size() - offset), bytes.data() + offset);
+        });
+
+        CompleteDownload(download.downloadId);
+        return bytes;
     }
 
     // -- monitoring ---------------------------------------------------------------------------------

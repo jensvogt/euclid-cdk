@@ -210,6 +210,89 @@ namespace Euclid::CDK::EMM {
     };
 
     /**
+     * @brief One backup archive on disk.
+     *
+     * @par
+     * A backup is written per scope: one at the top, one per account, one per namespace, all under
+     * the same file name. "accountId" and "namespace" say which scope this file holds - both empty
+     * for the top one, the namespace empty for an account's own.
+     */
+    struct EUCLID_CDK_API Backup {
+        std::string name;
+        std::string path;
+        std::string accountId;
+        std::string nameSpace;
+
+        /**
+         * @brief When the backup this file belongs to began, taken from its name - which is what
+         * groups the files of one run across the scopes.
+         */
+        std::string startedAt;
+        std::string modified;
+        long size{};
+
+        /**
+         * @brief Whether the archive was finished.
+         *
+         * @par
+         * False is a backup that was still being written when the process went down. Nothing waits
+         * for a backup, so the payload is left where it is and shows up here rather than being
+         * cleaned away - which is what makes an interrupted run visible instead of silently absent.
+         */
+        bool complete{};
+    };
+
+    /**
+     * @brief The backups on disk, and the schedule that writes them.
+     */
+    struct EUCLID_CDK_API BackupsResult {
+        std::string directory;
+
+        /**
+         * @brief Whether the scheduled backup runs at all.
+         */
+        bool enabled{};
+
+        /**
+         * @brief The cron expression it runs on.
+         */
+        std::string schedule;
+
+        /**
+         * @brief How many archives are kept before the oldest is dropped.
+         */
+        long keep{};
+
+        /**
+         * @brief What the *next* backup will take, which is not necessarily what the configuration
+         * asks for: a full backup is dropped when a passphrase is set.
+         */
+        bool full{};
+
+        /**
+         * @brief Whether a passphrase is configured, and so whether the archives are sealed.
+         */
+        bool encrypted{};
+        std::vector<Backup> backups;
+    };
+
+    /**
+     * @brief A backup that has been started.
+     *
+     * @par
+     * Answered with HTTP 202 rather than 200, and the distinction is the point: the archive named
+     * here does not exist yet. Nothing waits for a backup, so this says what was started and
+     * Emm::ListBackups() is where it is found once it is done.
+     */
+    struct EUCLID_CDK_API BackupStarted {
+        std::string name;
+        std::string directory;
+        std::string startedAt;
+        bool full{};
+        bool encrypted{};
+    };
+
+    /**
      * @brief Reads one instance of a module.
      */
     [[nodiscard]]
@@ -244,6 +327,24 @@ namespace Euclid::CDK::EMM {
      */
     [[nodiscard]]
     EUCLID_CDK_API ModuleLogLevel ToModuleLogLevel(const boost::json::value &value);
+
+    /**
+     * @brief Reads one backup archive.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API Backup ToBackup(const boost::json::value &value);
+
+    /**
+     * @brief Reads a list-backups response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API BackupsResult ToBackupsResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads a create-backup response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API BackupStarted ToBackupStarted(const boost::json::value &value);
 
     /**
      * @brief Reads a start-module, stop-module or restart-module response.

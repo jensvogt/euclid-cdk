@@ -35,6 +35,11 @@ namespace Euclid::CDK {
         // with no error and no retry. Running the whole exchange as one chained async pipeline,
         // driven by a single ioc.run(), makes the configured timeout real: if any step stalls, the
         // stream's internal timer cancels it and the pending handler gets an error instead.
+        //
+        // The response is read through a parser with its body limit lifted: left at Beast's
+        // default of 8MB, an object fetched whole fails as "body limit exceeded" with nothing to
+        // say how large it was. How much a caller is willing to take is the caller's to say -
+        // GetObject() declares it to the server, which answers 413 above it.
 
         RawResponse sendPlain(asio::io_context &ioc, const tcp::resolver::results_type &endpoints, const Request &request, const std::chrono::milliseconds timeout) {
 
@@ -43,7 +48,8 @@ namespace Euclid::CDK {
 
             beast::error_code opEc;
             beast::flat_buffer buffer;
-            RawResponse response;
+            http::response_parser<RawResponse::body_type> response;
+            response.body_limit(boost::none);
 
             stream.async_connect(endpoints, [&](const beast::error_code &ec, const tcp::endpoint &) {
                 if (ec) {
@@ -67,7 +73,7 @@ namespace Euclid::CDK {
             std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
             if (opEc) throw boost::system::system_error(opEc);
-            return response;
+            return response.release();
         }
 
         RawResponse sendTls(asio::io_context &ioc, const tcp::resolver::results_type &endpoints, const std::string &host,
@@ -90,7 +96,8 @@ namespace Euclid::CDK {
 
             beast::error_code opEc;
             beast::flat_buffer buffer;
-            RawResponse response;
+            http::response_parser<RawResponse::body_type> response;
+            response.body_limit(boost::none);
 
             beast::get_lowest_layer(stream).async_connect(endpoints, [&](const beast::error_code &ec, const tcp::endpoint &) {
                 if (ec) {
@@ -125,7 +132,7 @@ namespace Euclid::CDK {
             beast::get_lowest_layer(stream).close();
 
             if (opEc) throw boost::system::system_error(opEc);
-            return response;
+            return response.release();
         }
 
     }// namespace

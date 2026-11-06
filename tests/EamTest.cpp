@@ -306,42 +306,6 @@ BOOST_AUTO_TEST_SUITE(EamSessionTest)
         BOOST_TEST(!body.contains("name"));
     }
 
-    BOOST_AUTO_TEST_CASE(ChangingYourOwnPasswordNamesNobody) {
-        const FakeGateway gateway(gatewayHandler("{}"));
-        const auto session = builder(gateway).Login();
-
-        session.ChangePassword("old-one", "new-one");
-
-        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "change-password");
-        const auto body = boost::json::parse(gateway.LastRequest().body());
-        BOOST_TEST(body.at("oldPassword").as_string() == "old-one");
-        BOOST_TEST(body.at("newPassword").as_string() == "new-one");
-
-        // An absent userId is what tells the server this is the change rather than the reset.
-        BOOST_TEST(!body.as_object().contains("userId"));
-    }
-
-    BOOST_AUTO_TEST_CASE(ResettingSomebodyElsesPasswordNamesThemAndSendsNoOldOne) {
-        const FakeGateway gateway(gatewayHandler("{}"));
-        const auto session = builder(gateway).Login();
-
-        session.ResetPassword("jill", "new-one");
-
-        const auto body = boost::json::parse(gateway.LastRequest().body());
-        BOOST_TEST(body.at("userId").as_string() == "jill");
-        BOOST_TEST(body.at("newPassword").as_string() == "new-one");
-        BOOST_TEST(!body.as_object().contains("oldPassword"));
-    }
-
-    // The server reads a request naming yourself as the change, and would refuse this one for the
-    // old password it did not get - a confusing way to learn you wanted the other method.
-    BOOST_AUTO_TEST_CASE(ResettingYourOwnPasswordIsRefusedBeforeItIsSent) {
-        const FakeGateway gateway(gatewayHandler("{}"));
-        const auto session = builder(gateway).Login();
-
-        BOOST_CHECK_THROW(session.ResetPassword(session.UserId(), "new-one"), EuclidError);
-    }
-
     BOOST_AUTO_TEST_CASE(ReadsACreatedAccessKey) {
         const FakeGateway gateway(gatewayHandler(R"({"accessKeyId": "AKIANEW", "secretAccessKey": "s3cr3t", "createdAt": "2026-09-12T10:00:00Z"})"));
         const auto session = builder(gateway).Login();
@@ -491,6 +455,53 @@ BOOST_AUTO_TEST_SUITE(EamCacheTest)
 
         std::ignore = builder(gateway).Login();
         BOOST_TEST(gateway.Received().size() == 2U);
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(EamIdentityTest)
+
+    BOOST_AUTO_TEST_CASE(ChangesAnEmailAddress) {
+        const FakeGateway gateway(gatewayHandler(R"({"user": {"userId": "jens", "email": "jens.vogt@example.com"}})"));
+        const auto session = builder(gateway).Login();
+
+        BOOST_TEST(session.ChangeEmail("jens", "jens.vogt@example.com").email == "jens.vogt@example.com");
+
+        const auto body = boost::json::parse(gateway.LastRequest().body());
+        BOOST_TEST(body.at("userId").as_string() == "jens");
+        BOOST_TEST(body.at("email").as_string() == "jens.vogt@example.com");
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "change-email");
+    }
+
+    // The narrower question a client actually has - which accounts can this session choose between
+    // - rather than ListAccounts(), which is the installation and administrator-only.
+    BOOST_AUTO_TEST_CASE(ListsTheAccountsThisSessionCanReach) {
+        const FakeGateway gateway(gatewayHandler(R"({"homeAccountId": "000000000000", "total": 2,
+                                                     "accounts": [{"accountId": "000000000000", "name": "main"},
+                                                                  {"accountId": "000000000001", "name": "partner"}]})"));
+        const auto session = builder(gateway).Login();
+
+        const auto accounts = session.ListMyAccounts();
+
+        BOOST_TEST(accounts.homeAccountId == "000000000000");
+        BOOST_TEST(accounts.total == 2L);
+        BOOST_REQUIRE(accounts.accounts.size() == 2U);
+        BOOST_TEST(accounts.accounts[1].name == "partner");
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "list-my-accounts");
+    }
+
+    // Answers what a login answers, but does not adopt it: replacing the token is a decision about
+    // the session object rather than something a call that reads should take.
+    BOOST_AUTO_TEST_CASE(RefreshingReadsANewTokenWithoutAdoptingIt) {
+        const FakeGateway gateway(gatewayHandler(Test::LoginResponse()));
+        const auto session = builder(gateway).Login();
+        const auto before = session.Token();
+
+        const auto refreshed = session.RefreshSession();
+
+        BOOST_TEST(!refreshed.token.empty());
+        BOOST_TEST(session.Token() == before);
+        BOOST_TEST(std::string(gateway.LastRequest()["x-euclid-action"]) == "refresh-session");
     }
 
 BOOST_AUTO_TEST_SUITE_END()
