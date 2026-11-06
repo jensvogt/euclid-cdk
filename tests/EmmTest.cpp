@@ -129,7 +129,11 @@ BOOST_AUTO_TEST_SUITE(EmmModuleTest)
                 {"total", 1}});
         const EmmClient client(Test::Answering(answer));
 
-        const auto &instance = client.emm.ListModules().modules[0].instances[0];
+        // The result in a variable of its own, not a reference into the temporary: binding to a
+        // member reached through vector::operator[] does not extend that temporary's life, so the
+        // reference would dangle - which reads as whatever the freed memory happens to hold.
+        const auto listed = client.emm.ListModules();
+        const auto &instance = listed.modules[0].instances[0];
         BOOST_TEST(instance.utilisation == -1L);
         BOOST_TEST(instance.backlog == -1L);
         BOOST_TEST(instance.loadReportedAt.empty());
@@ -139,7 +143,8 @@ BOOST_AUTO_TEST_SUITE(EmmModuleTest)
     BOOST_AUTO_TEST_CASE(NothingPendingReadsMinusOne) {
         const EmmClient client(Test::Answering(R"({"modules": [{"name": "esm"}], "total": 1})"));
 
-        const auto &only = client.emm.ListModules().modules[0];
+        const auto listed = client.emm.ListModules();
+        const auto &only = listed.modules[0];
         BOOST_TEST(only.desiredMinInstances == -1L);
         BOOST_TEST(only.desiredMaxInstances == -1L);
         BOOST_TEST(only.desiredThreads == -1L);
