@@ -706,6 +706,130 @@ BOOST_AUTO_TEST_SUITE(EsmTransferTest)
         BOOST_TEST(storage.Attempts("create-download") == 0);
     }
 
+    // Beast reads a response into a message with a body limit of 8MB unless told otherwise, and
+    // fails anything above it as "body limit exceeded" - however much the caller said it would take.
+    BOOST_AUTO_TEST_CASE(TakesAResponseAboveBeastsDefaultBodyLimit) {
+        FakeStorage storage;
+        const std::string content(9 * 1024 * 1024, 'g');
+        storage.Store(kBucket, "data/nine-megabytes.bin", content);
+        const EsmClient client(storageHandler(storage));
+
+        BOOST_TEST(client.esm.GetObject(kBucket, "data/nine-megabytes.bin", 16L * 1024 * 1024) == content);
+    }
+
+    BOOST_AUTO_TEST_CASE(UploadsAndDownloadsBytesInParts) {
+        FakeStorage storage;
+        const EsmClient client(storageHandler(storage));
+
+        // Three parts, the last one short, as for a file.
+        const std::string content = std::string(4, 'a') + std::string(4, 'b') + "c";
+
+        const auto uploaded = client.esm.UploadObject(kBucket, "data/large.bin", content, {.partSize = 4, .concurrency = 3});
+        BOOST_TEST(uploaded.key == "data/large.bin");
+        BOOST_TEST(uploaded.size == 9L);
+        BOOST_TEST(storage.Object(kBucket, "data/large.bin").value() == content);
+        BOOST_TEST(storage.Attempts("upload-part") == 3);
+        BOOST_TEST(storage.Attempts("put-object") == 0);
+
+        BOOST_TEST(client.esm.DownloadObject(kBucket, "data/large.bin", 0, {.partSize = 4, .concurrency = 3}) == content);
+        BOOST_TEST(storage.Attempts("download-part") == 3);
+        BOOST_TEST(storage.Attempts("complete-download") == 1);
+    }
+
+    BOOST_AUTO_TEST_CASE(SendsBytesBelowThePartSizeInOneRequest) {
+        FakeStorage storage;
+        const EsmClient client(storageHandler(storage));
+
+        const auto uploaded = client.esm.UploadObject(kBucket, "data/small.bin", "some bytes",
+                                                      {.partSize = 5000, .attributes = {{"origin", std::string("EsmTest")}}});
+
+        BOOST_TEST(uploaded.size == 10L);
+        BOOST_TEST(storage.Attempts("put-object") == 1);
+        BOOST_TEST(storage.Attempts("create-upload") == 0);
+        const auto attributes = boost::json::parse(storage.AttributeHeader(kBucket, "data/small.bin"));
+        BOOST_TEST(attributes.at("origin").at("value").as_string() == "EsmTest");
+
+        BOOST_TEST(client.esm.DownloadObject(kBucket, "data/small.bin") == "some bytes");
+        BOOST_TEST(storage.Attempts("create-download") == 0);
+    }
+
+    BOOST_AUTO_TEST_CASE(StillMakesAnObjectOutOfNoBytes) {
+        FakeStorage storage;
+        const EsmClient client(storageHandler(storage));
+
+        const auto uploaded = client.esm.UploadObject(kBucket, "data/empty.bin", {});
+
+        BOOST_TEST(uploaded.size == 0L);
+        BOOST_TEST(storage.Attempts("put-object") == 1);
+        BOOST_TEST(storage.Object(kBucket, "data/empty.bin").has_value());
+        BOOST_TEST(client.esm.DownloadObject(kBucket, "data/empty.bin").empty());
+    }
+
+    // Refused on the size create-download reports, before a part is fetched - the whole point of a
+    // limit on a download into memory being that the memory is never spent.
+    BOOST_AUTO_TEST_CASE(RefusesAnObjectLargerThanTheLimitBeforeFetchingAnyPart) {
+        FakeStorage storage;
+        storage.Store(kBucket, "data/large.bin", std::string(64, 'e'));
+        const EsmClient client(storageHandler(storage));
+
+        try {
+            std::ignore = client.esm.DownloadObject(kBucket, "data/large.bin", 32, {.partSize = 16});
+            BOOST_FAIL("expected a ServiceError");
+        } catch (const ServiceError &ex) {
+            BOOST_TEST(ex.Status() == ESM::PayloadTooLarge);
+            BOOST_TEST(ex.Action() == "get-object");
+            BOOST_TEST(ex.Reason() == "the object is 64 bytes, larger than the 32 accepted");
+        }
+        BOOST_TEST(storage.Attempts("download-part") == 0);
+        BOOST_TEST(storage.Attempts("complete-download") == 1);
+    }
+
+    // The same limit when the object fits in the one request tried first.
+    BOOST_AUTO_TEST_CASE(RefusesASmallObjectLargerThanTheLimitToo) {
+        FakeStorage storage;
+        storage.Store(kBucket, "data/small.bin", std::string(10, 'e'));
+        const EsmClient client(storageHandler(storage));
+
+        try {
+            std::ignore = client.esm.DownloadObject(kBucket, "data/small.bin", 5);
+            BOOST_FAIL("expected a ServiceError");
+        } catch (const ServiceError &ex) {
+            BOOST_TEST(ex.Status() == ESM::PayloadTooLarge);
+        }
+        BOOST_TEST(storage.Attempts("create-download") == 0);
+    }
+
+    BOOST_AUTO_TEST_CASE(DownloadsAnObjectExactlyAtTheLimit) {
+        FakeStorage storage;
+        storage.Store(kBucket, "data/exact.bin", std::string(32, 'e'));
+        const EsmClient client(storageHandler(storage));
+
+        BOOST_TEST(client.esm.DownloadObject(kBucket, "data/exact.bin", 32, {.partSize = 16}) == std::string(32, 'e'));
+    }
+
+    BOOST_AUTO_TEST_CASE(RefusesAPartSizeOfNothingForBytesToo) {
+        FakeStorage storage;
+        const EsmClient client(storageHandler(storage));
+
+        BOOST_CHECK_THROW(std::ignore = client.esm.UploadObject(kBucket, "data/refused.bin", "some bytes", {.partSize = 0}), EuclidError);
+        BOOST_CHECK_THROW(std::ignore = client.esm.DownloadObject(kBucket, "data/refused.bin", 0, {.partSize = 0}), EuclidError);
+        BOOST_TEST(storage.Attempts("create-upload") == 0);
+        BOOST_TEST(storage.Attempts("put-object") == 0);
+    }
+
+    BOOST_AUTO_TEST_CASE(OpensNoSessionWhenDownloadingBytesThatAreNotThere) {
+        FakeStorage storage;
+        const EsmClient client(storageHandler(storage));
+
+        try {
+            std::ignore = client.esm.DownloadObject(kBucket, "data/missing.bin");
+            BOOST_FAIL("expected a ServiceError");
+        } catch (const ServiceError &ex) {
+            BOOST_TEST(ex.Status() == 404);
+        }
+        BOOST_TEST(storage.Attempts("create-download") == 0);
+    }
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(EsmRetryTest)
@@ -813,6 +937,154 @@ BOOST_AUTO_TEST_SUITE(EsmAuthenticationTest)
 
         BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-namespace"]) == "reports");
         BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-user-id"]) == "jens");
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(EsmLifecycleTest)
+
+    BOOST_AUTO_TEST_CASE(KeepsVersionsWhenAskedTo) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:bucket/reports", "name": "reports", "versioning": true})"));
+
+        BOOST_TEST(client.esm.SetBucketVersioning(kBucket, true).versioning);
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("enabled").as_bool() == true);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "set-bucket-versioning");
+    }
+
+    // A key whose current object was deleted still lists what was kept, which is what makes a
+    // deletion recoverable - so an answer with no latest version is a deleted key, not a missing one.
+    BOOST_AUTO_TEST_CASE(ListsVersionsIncludingForADeletedKey) {
+        const EsmClient client(Test::Answering(R"({"bucketErn": "ern:bucket/reports", "key": "q3.pdf",
+                                                   "ern": "ern:object/reports/q3.pdf", "versioning": true,
+                                                   "versions": [{"versionId": "v2", "latest": false, "size": 2048},
+                                                                {"versionId": "v1", "latest": false, "size": 1024}],
+                                                   "total": 2})"));
+
+        const auto versions = client.esm.ListObjectVersions(kBucket, "q3.pdf");
+
+        BOOST_TEST(versions.total == 2L);
+        BOOST_REQUIRE(versions.versions.size() == 2U);
+        BOOST_TEST(!versions.versions[0].latest);
+        BOOST_TEST(versions.versions[0].versionId == "v2");
+    }
+
+    BOOST_AUTO_TEST_CASE(ReplacesTheLifecycleRulesWholesale) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:bucket/reports", "name": "reports",
+                                                   "rules": [{"id": "cold", "prefix": "archive/",
+                                                              "archiveAfterDays": 90, "restoreDays": 7,
+                                                              "enabled": true}]})"));
+
+        const auto set = client.esm.SetBucketLifecycle(kBucket, {{.id = "cold", .prefix = "archive/",
+                                                                 .archiveAfterDays = 90, .restoreDays = 7}});
+
+        BOOST_REQUIRE(set.rules.size() == 1U);
+        BOOST_TEST(set.rules[0].id == "cold");
+        BOOST_TEST(set.rules[0].archiveAfterDays == 90L);
+        BOOST_TEST(set.rules[0].enabled);
+
+        const auto body = lastBody(client.gateway);
+        BOOST_REQUIRE(body.at("rules").as_array().size() == 1U);
+        BOOST_TEST(body.at("rules").as_array()[0].at("prefix").as_string() == "archive/");
+    }
+
+    // A rule written without the field is one that applies, so a reader defaulting it to false
+    // would quietly disable every rule a server did not spell out.
+    BOOST_AUTO_TEST_CASE(ARuleThatSaysNothingAboutBeingEnabledIsOne) {
+        const EsmClient client(Test::Answering(R"({"rules": [{"id": "cold", "archiveAfterDays": 30}]})"));
+
+        BOOST_TEST(client.esm.GetBucketLifecycle(kBucket).rules[0].enabled);
+    }
+
+    BOOST_AUTO_TEST_CASE(ArchivesAndRestoresOneObject) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:object/reports/q3.pdf",
+                                                   "bucketErn": "ern:bucket/reports", "key": "q3.pdf",
+                                                   "lifecycleState": "ARCHIVED",
+                                                   "archivedAt": "2026-11-01T08:00:00Z",
+                                                   "archiveFile": "2026-11.zip"})"));
+
+        const auto archived = client.esm.ArchiveObject(kBucket, "q3.pdf");
+
+        BOOST_TEST(archived.lifecycleState == std::string(ESM::LifecycleArchived));
+        BOOST_TEST(archived.archiveFile == "2026-11.zip");
+        // Not restored, so the field that says when a restore expires is empty.
+        BOOST_TEST(archived.restoredUntil.empty());
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "archive-object");
+    }
+
+    // Zero is not a mistake here - it is what asks for the covering rule's own grace period - so
+    // only the range beyond it is refused.
+    BOOST_AUTO_TEST_CASE(RestoreTakesZeroDaysToMeanTheRulesOwnPeriod) {
+        const EsmClient client(Test::Answering(R"({"lifecycleState": "STANDARD",
+                                                   "restoredUntil": "2026-11-08T08:00:00Z"})"));
+
+        const auto restored = client.esm.RestoreObject(kBucket, "q3.pdf");
+        BOOST_TEST(restored.restoredUntil == "2026-11-08T08:00:00Z");
+        BOOST_TEST(lastBody(client.gateway).at("days").as_int64() == 0);
+
+        std::ignore = client.esm.RestoreObject(kBucket, "q3.pdf", 14);
+        BOOST_TEST(lastBody(client.gateway).at("days").as_int64() == 14);
+
+        BOOST_CHECK_THROW(std::ignore = client.esm.RestoreObject(kBucket, "q3.pdf", -1), EuclidError);
+        BOOST_CHECK_THROW(std::ignore = client.esm.RestoreObject(kBucket, "q3.pdf", ESM::MaxRestoreDays + 1), EuclidError);
+    }
+
+    // Stopping holds the notifications and leaves the objects alone - this is not a way to make a
+    // bucket read-only.
+    BOOST_AUTO_TEST_CASE(StopsAndStartsABucketsEvents) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:bucket/reports", "name": "reports",
+                                                   "stopped": true, "held": 42})"));
+
+        const auto stopped = client.esm.StopBucket(kBucket);
+        BOOST_TEST(stopped.stopped);
+        BOOST_TEST(stopped.held == 42L);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "stop-bucket");
+
+        std::ignore = client.esm.StartBucket(kBucket);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "start-bucket");
+    }
+
+    BOOST_AUTO_TEST_CASE(ReadsVersioningAndStoppedOffABucket) {
+        const EsmClient client(Test::Answering(R"({"bucket": {"name": "reports", "versioning": true, "stopped": true}})"));
+
+        const auto bucket = client.esm.GetBucket("reports");
+        BOOST_TEST(bucket.versioning);
+        BOOST_TEST(bucket.stopped);
+    }
+
+    BOOST_AUTO_TEST_CASE(VerifiesObjectsAndSaysWhereToCarryOn) {
+        const EsmClient client(Test::Answering(R"({"bucketErn": "ern:bucket/reports", "afterKey": "",
+                                                   "scanned": 500, "checked": 480, "skipped": 20,
+                                                   "problems": [{"key": "q3.pdf", "problem": "size-mismatch",
+                                                                 "recordedSize": 2048, "fileSize": 1024,
+                                                                 "expectedFileSize": 2048}],
+                                                   "nextKey": "q4.pdf"})"));
+
+        const auto result = client.esm.VerifyObjects(kBucket, {.limit = 500});
+
+        BOOST_TEST(result.scanned == 500L);
+        BOOST_TEST(result.skipped == 20L);
+        BOOST_REQUIRE(result.problems.size() == 1U);
+        BOOST_TEST(result.problems[0].problem == "size-mismatch");
+        BOOST_TEST(result.problems[0].fileSize == 1024L);
+        // Where the next pass starts; empty would be the end of the bucket.
+        BOOST_TEST(result.nextKey == "q4.pdf");
+        BOOST_TEST(lastBody(client.gateway).at("limit").as_int64() == 500);
+    }
+
+    BOOST_AUTO_TEST_CASE(RefusesAVerifyLimitTheServerWouldRefuse) {
+        const EsmClient client(Test::Answering("{}"));
+
+        BOOST_CHECK_THROW(std::ignore = client.esm.VerifyObjects(kBucket, {.limit = 0}), EuclidError);
+        BOOST_CHECK_THROW(std::ignore = client.esm.VerifyObjects(kBucket, {.limit = ESM::MaxVerifyLimit + 1}), EuclidError);
+    }
+
+    BOOST_AUTO_TEST_CASE(ReadsOneObjectsSize) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:object/reports/q3.pdf", "size": 2048})"));
+
+        BOOST_TEST(client.esm.GetObjectSize(kBucket, "q3.pdf") == 2048L);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "get-object-size");
     }
 
 BOOST_AUTO_TEST_SUITE_END()

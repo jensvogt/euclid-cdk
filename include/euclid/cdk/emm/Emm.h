@@ -3,6 +3,7 @@
 #pragma once
 
 // C++ includes
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -265,6 +266,44 @@ namespace Euclid::CDK::EMM {
          */
         [[nodiscard]]
         ModuleLogLevel ResetLogLevel(const std::string &name) const;
+
+        // -- backups ----------------------------------------------------------------------------
+
+        /**
+         * @brief The backup archives on disk, and the schedule that writes them.
+         *
+         * @par
+         * Where Export() dumps collections on demand, these are what the installation writes on its
+         * own schedule. BackupsResult carries the configuration as well as the files, so "why is
+         * there no backup from last night" can be answered without reading the server's config.
+         *
+         * @par
+         * Backup::complete false is a run interrupted mid-write; the payload is left where it is
+         * rather than cleaned away, so an interrupted backup is visible instead of silently absent.
+         */
+        [[nodiscard]]
+        BackupsResult ListBackups() const;
+
+        /**
+         * @brief Starts a backup now, outside the schedule.
+         *
+         * @par
+         * **Does not wait.** The server answers HTTP 202 with the name the archive will have and
+         * writes it on a thread nothing joins - so the file named in the answer does not exist yet,
+         * and ListBackups() is where it is found once it does.
+         *
+         * @par
+         * One backup at a time, installation-wide: a second request while one is being written is
+         * refused rather than queued.
+         *
+         * @param full whether to take the collections only a full backup carries. Unset follows the
+         * installation's own setting. Note that a full backup is **dropped when a passphrase is
+         * configured**, whatever is asked for here - BackupStarted::full is what was actually
+         * decided, which is why it is worth reading rather than assuming.
+         * @throws ServiceError 409 if a backup is already being written.
+         */
+        [[nodiscard]]
+        BackupStarted CreateBackup(std::optional<bool> full = std::nullopt) const;
 
         // -- archives ---------------------------------------------------------------------------
 

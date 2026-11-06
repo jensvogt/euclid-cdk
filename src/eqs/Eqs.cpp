@@ -127,6 +127,16 @@ namespace Euclid::CDK::EQS {
         return NumberOf("set-queue-delay", {{"ern", ern}, {"delay", delay}}, "delay");
     }
 
+    MaxRetriesResult Eqs::SetQueueMaxRetries(const std::string &ern, const long maxRetries) const {
+        // One rather than zero is the floor, and the reason is worth saying: zero would send every
+        // message to the dead letter queue on its first receive, which is a queue nobody can
+        // consume from. The ceiling is the same figure AWS SQS holds maxReceiveCount to.
+        if (maxRetries < 1 || maxRetries > MaxRetriesLimit) {
+            throw EuclidError("maxRetries has to be between 1 and " + std::to_string(MaxRetriesLimit));
+        }
+        return ToMaxRetriesResult(Call("set-queue-max-retries", {{"ern", ern}, {"maxRetries", maxRetries}}));
+    }
+
     MaxMessageLengthResult Eqs::SetQueueMaxMessageLength(const std::string &ern, const long maxMessageLength) const {
         // Zero is allowed and is not "accept nothing": it is the queue carrying no limit of its own,
         // which a send then measures against the installation's figure instead.
@@ -256,10 +266,6 @@ namespace Euclid::CDK::EQS {
 
     void Eqs::SetMessageVisibility(const std::string &messageId, const long visibility) const {
         std::ignore = Call("set-message-visibility", {{"messageId", messageId}, {"visibility", visibility}});
-    }
-
-    UpdateMessageBodyResult Eqs::UpdateMessageBody(const std::string &messageId, const std::string &body) const {
-        return ToUpdateMessageBodyResult(Call("update-message-body", {{"messageId", messageId}, {"body", body}}));
     }
 
     MessageAttribute Eqs::GetMessageAttribute(const std::string &messageId, const std::string &name) const {

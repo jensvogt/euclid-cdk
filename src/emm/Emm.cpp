@@ -85,6 +85,22 @@ namespace Euclid::CDK::EMM {
         return SetLogLevel(name, "");
     }
 
+    // -- backups ------------------------------------------------------------------------------------
+
+    BackupsResult Emm::ListBackups() const {
+        return ToBackupsResult(Call("list-backups"));
+    }
+
+    BackupStarted Emm::CreateBackup(const std::optional<bool> full) const {
+
+        boost::json::object payload;
+        // Sent only when the caller decided, because absent is what follows the installation's own
+        // setting - and false is a decision, not an absence.
+        if (full.has_value()) payload["full"] = *full;
+
+        return ToBackupStarted(Call("create-backup", payload));
+    }
+
     // -- archives -----------------------------------------------------------------------------------
 
     boost::json::object Emm::Export(const ExportOptions &options) const {

@@ -69,6 +69,48 @@ namespace Euclid::CDK::ESM {
     inline constexpr int PayloadTooLarge = 413;
 
     /**
+     * @brief What an object's lifecycleState reads as.
+     *
+     * @par
+     * LifecycleArchived means the bytes are in an archive rather than in a file of their own, so
+     * the object is listed and described but cannot be downloaded until it is restored.
+     */
+    inline constexpr std::string_view LifecycleStandard = "STANDARD";
+    inline constexpr std::string_view LifecycleArchived = "ARCHIVED";
+
+    /**
+     * @brief How many objects one VerifyObjects() pass looks at unless it says otherwise.
+     */
+    inline constexpr long DefaultVerifyLimit = 10000;
+
+    /**
+     * @brief The most it will look at in one pass.
+     */
+    inline constexpr long MaxVerifyLimit = 100000;
+
+    /**
+     * @brief The longest grace period RestoreObject() accepts, in days.
+     */
+    inline constexpr long MaxRestoreDays = 36500;
+
+    /**
+     * @brief How much of a bucket one verification pass covers, and where it starts.
+     */
+    struct EUCLID_CDK_API VerifyOptions {
+
+        /**
+         * @brief The key to start after, from the previous pass's VerifyResult::nextKey. Empty
+         * starts at the beginning of the bucket.
+         */
+        std::string afterKey;
+
+        /**
+         * @brief At most this many objects, from 1 to MaxVerifyLimit.
+         */
+        long limit{DefaultVerifyLimit};
+    };
+
+    /**
      * @brief The two attribute maps a write carries, and they are not the same one.
      *
      * @par
@@ -326,6 +368,20 @@ namespace Euclid::CDK::ESM {
         long GetBucketSize(const std::string &ern) const;
 
         /**
+         * @brief One object's size in bytes.
+         *
+         * @par
+         * The figure the record carries, which is the object's own bytes - not the file behind it,
+         * which is larger for an encrypted object. GetObject() and a listing both report the same
+         * number.
+         *
+         * @throws ServiceError 404 if there is no such object, 409 if it has no final size yet
+         * because it is still being uploaded.
+         */
+        [[nodiscard]]
+        long GetObjectSize(const std::string &bucketErn, const std::string &key) const;
+
+        /**
          * @brief Renames a bucket, and with it every object and subscription that named the old one.
          *
          * @par
@@ -377,6 +433,167 @@ namespace Euclid::CDK::ESM {
          */
         [[nodiscard]]
         SetBucketPriorityResult SetBucketPriority(const std::string &ern, const std::string &priority = {}) const;
+
+        /**
+         * @brief Whether the bucket keeps the previous object when a key is written again.
+         *
+         * @par
+         * Off by default, because keeping every version costs disk for as long as the bucket exists.
+         * Turning it on applies to what is written from here on; turning it off leaves what was
+         * already kept, so a bucket switched off still has its versions and ListObjectVersions()
+         * still reads them.
+         *
+         * @param ern     the bucket.
+         * @param enabled whether to keep versions. Required rather than defaulted on the wire -
+         * either answer is a change somebody may not have meant, and the two cost very different
+         * amounts of disk.
+         * @throws ServiceError 403 if the bucket is not the caller's account's, 404 if there is no
+         * such bucket.
+         */
+        [[nodiscard]]
+        BucketVersioningResult SetBucketVersioning(const std::string &ern, bool enabled) const;
+
+        /**
+         * @brief Every version of one key, the current object first.
+         *
+         * @par
+         * A key whose current object was deleted still lists what was kept, which is what makes a
+         * deletion recoverable - so an answer with no latest version is a deleted key rather than a
+         * missing one.
+         *
+         * @param bucketErn the bucket, by ERN or bare name.
+         * @param key       the object key.
+         * @throws ServiceError 404 if the key has neither a current object nor any version.
+         */
+        [[nodiscard]]
+        ObjectVersions ListObjectVersions(const std::string &bucketErn, const std::string &key) const;
+
+        // -- lifecycle --------------------------------------------------------------------------
+
+        /**
+         * @brief Replaces a bucket's lifecycle rules.
+         *
+         * @par
+         * Replaces rather than merges, and the whole set is validated before any of it is stored -
+         * so a bucket never ends up with half of a set. Passing no rules is the same as
+         * DeleteBucketLifecycle().
+         *
+         * @par
+         * Rules decide what to archive, not what to bring back: objects already archived stay
+         * archived when the rules change, and RestoreObject() is what reverses that.
+         *
+         * @param ern   the bucket.
+         * @param rules the rules, each with an id unique within the set.
+         * @throws ServiceError 400 if a rule is malformed or an id is given twice, 409 if the bucket
+         * is one of euclid's own - those are read straight off the disk by the modules that use
+         * them, which know nothing of an archive.
+         */
+        [[nodiscard]]
+        BucketLifecycle SetBucketLifecycle(const std::string &ern, const std::vector<LifecycleRule> &rules) const;
+
+        /**
+         * @brief A bucket's lifecycle rules as they now stand; an empty set is a bucket with none.
+         */
+        [[nodiscard]]
+        BucketLifecycle GetBucketLifecycle(const std::string &ern) const;
+
+        /**
+         * @brief Removes every lifecycle rule, leaving whatever is already archived archived.
+         */
+        [[nodiscard]]
+        BucketLifecycle DeleteBucketLifecycle(const std::string &ern) const;
+
+        /**
+         * @brief Archives one object by hand, whatever the rules say.
+         *
+         * @par
+         * What an operator does to something they know is not wanted online; it needs no rule to
+         * cover it. The object stays listed and described, and its bytes move into an archive - so
+         * a download is refused until it is restored.
+         *
+         * @par
+         * Idempotent: an object already archived is answered as it is rather than refused.
+         *
+         * @param bucketErn the bucket.
+         * @param key       the object key.
+         * @throws ServiceError 409 if the object is not complete - only a finished object can be
+         * archived - or if the bucket is one of euclid's own.
+         */
+        [[nodiscard]]
+        ObjectLifecycle ArchiveObject(const std::string &bucketErn, const std::string &key) const;
+
+        /**
+         * @brief Brings an archived object back online for a while.
+         *
+         * @par
+         * Temporary by default: ObjectLifecycle::restoredUntil is when it goes back, and a rule that
+         * covers the key decides how long unless days says otherwise. That is worth reading rather
+         * than assuming, because a restore that expires while something is still reading from it
+         * looks like the object vanishing.
+         *
+         * @par
+         * Idempotent, like archiving.
+         *
+         * @param bucketErn the bucket.
+         * @param key       the object key.
+         * @param days      how long to keep it online, up to MaxRestoreDays; 0 takes the covering
+         * rule's own period.
+         * @throws EuclidError if days is negative or beyond MaxRestoreDays.
+         */
+        [[nodiscard]]
+        ObjectLifecycle RestoreObject(const std::string &bucketErn, const std::string &key, long days = 0) const;
+
+        // -- bucket state -----------------------------------------------------------------------
+
+        /**
+         * @brief Holds the bucket's events, leaving its objects alone.
+         *
+         * @par
+         * What stops is the notifications: every event published about the bucket from now on is
+         * held, along with the deliveries to its subscribers that were still waiting. Reading and
+         * writing objects carries on exactly as before - this is not a way to make a bucket
+         * read-only.
+         *
+         * @par
+         * Idempotent. BucketStateResult::held is how much is waiting.
+         */
+        [[nodiscard]]
+        BucketStateResult StopBucket(const std::string &ern) const;
+
+        /**
+         * @brief Releases a stopped bucket's held events.
+         *
+         * @par
+         * Everything held goes out, so a bucket stopped for an hour delivers an hour of events when
+         * it starts - which is the point, but worth knowing before stopping a busy one.
+         * BucketStateResult::released is how many went. Starting a bucket that was never stopped
+         * releases nothing and is not an error.
+         */
+        [[nodiscard]]
+        BucketStateResult StartBucket(const std::string &ern) const;
+
+        // -- checking ---------------------------------------------------------------------------
+
+        /**
+         * @brief Checks a bucket's objects against the files behind them.
+         *
+         * @par
+         * A stat per object, and a header read for an encrypted one - never the bytes, so this is
+         * cheap enough to run on a large bucket. What it finds is a record whose file is missing or
+         * whose size disagrees, which is the kind of damage nothing else notices until a download
+         * fails.
+         *
+         * @par
+         * One pass covers at most VerifyOptions::limit objects; VerifyResult::nextKey is where the
+         * next one starts, and is empty at the end of the bucket. Objects still being uploaded,
+         * archived ones and directory markers are counted as skipped rather than checked.
+         *
+         * @param bucketErn the bucket.
+         * @param options   where to start, and how much to cover.
+         * @throws EuclidError if the limit is outside 1..MaxVerifyLimit.
+         */
+        [[nodiscard]]
+        VerifyResult VerifyObjects(const std::string &bucketErn, const VerifyOptions &options = {}) const;
 
         /**
          * @brief Deletes a bucket's objects, leaving the bucket itself in place.
@@ -703,6 +920,48 @@ namespace Euclid::CDK::ESM {
          * @throws EuclidError if the file cannot be written, or if partSize is less than a byte.
          */
         long DownloadFile(const std::string &bucketErn, const std::string &key, const std::string &file, const DownloadOptions &options = {}) const;
+
+        /**
+         * @brief Uploads bytes already in memory in parts, several at a time - UploadFile() for a
+         * caller that has no file.
+         *
+         * @par
+         * Below one part the bytes go up in a single put-object, as UploadFile() does. Above it they
+         * are cut into parts, which keeps every request under the body limits between here and ESM
+         * however large the object is.
+         *
+         * @param bucketErn the bucket.
+         * @param key       the key the object is stored under.
+         * @param data      the object's bytes, verbatim.
+         * @param options   part size, concurrency and the two attribute maps.
+         * @return the object as it was stored.
+         * @throws ServiceError if a part or one of the calls bracketing them failed for good.
+         * @throws EuclidError if partSize is less than a byte.
+         */
+        [[nodiscard]]
+        StoredObject UploadObject(const std::string &bucketErn, const std::string &key, std::string_view data, const UploadOptions &options = {}) const;
+
+        /**
+         * @brief Downloads an object into memory, fetching its parts several at a time -
+         * DownloadFile() for a caller that wants the bytes rather than a file.
+         *
+         * @par
+         * Unlike GetObject(), the size of the object is not bounded by what one response may carry:
+         * an object larger than a part is fetched in parts. What bounds it is maxSize, checked
+         * against the size create-download reports before a single part is fetched, so an object
+         * too large to hold costs one round trip rather than the memory.
+         *
+         * @param bucketErn the bucket.
+         * @param key       the object's key.
+         * @param maxSize   the largest object accepted, in bytes; 0 for no limit.
+         * @param options   part size and concurrency.
+         * @return the object's bytes.
+         * @throws ServiceError if the object is not there, a part failed for good, or - HTTP 413 -
+         * the object is larger than maxSize.
+         * @throws EuclidError if partSize is less than a byte.
+         */
+        [[nodiscard]]
+        std::string DownloadObject(const std::string &bucketErn, const std::string &key, long maxSize = 0, const DownloadOptions &options = {}) const;
 
         /**
          * @brief Throws away a multipart upload that will not be finished.

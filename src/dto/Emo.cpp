@@ -3,6 +3,9 @@
 // C++ includes
 #include <utility>
 
+// C++ includes
+#include <optional>
+
 // Euclid includes
 #include <euclid/cdk/dto/Emo.h>
 
@@ -73,6 +76,106 @@ namespace Euclid::CDK::EMO {
                 .type = Json::Text(value, "type"),
                 .resolution = Json::Text(value, "resolution"),
                 .timestamp = Json::Text(value, "timestamp"),
+        };
+    }
+
+    namespace {
+
+        /**
+         * @brief A threshold, which is absent on a rule that has none and null on the wire.
+         *
+         * @par
+         * Told apart from zero deliberately: zero is a threshold somebody set, and reading an
+         * absent one as zero would make every rule without a warning level warn on everything.
+         */
+        std::optional<double> optionalNumber(const boost::json::value &value, const std::string &name) {
+            const auto object = Json::Object(value);
+            const auto *field = object.if_contains(name);
+            if (field == nullptr || field->is_null() || !field->is_number()) return std::nullopt;
+            return field->to_number<double>();
+        }
+
+    }// namespace
+
+    MetricInfo ToMetricInfo(const boost::json::value &value) {
+        return {
+                .name = Json::Text(value, "name"),
+                .type = Json::Text(value, "type"),
+                .series = Json::Number(value, "series"),
+                .labelNames = Json::Strings(value, "labelNames"),
+                .lastSeen = Json::Text(value, "lastSeen"),
+        };
+    }
+
+    AlertRule ToAlertRule(const boost::json::value &value) {
+        return {
+                .ruleId = Json::Text(value, "ruleId"),
+                .name = Json::Text(value, "name"),
+                .labels = Json::StringMap(value, "labels"),
+                .resolution = Json::Text(value, "resolution"),
+                .statistic = Json::Text(value, "statistic"),
+                .comparison = Json::Text(value, "comparison"),
+                .warning = optionalNumber(value, "warning"),
+                .critical = optionalNumber(value, "critical"),
+                // The server's own defaults, so a rule that said nothing reads as one step rather
+                // than as zero - which would raise and clear on every step.
+                .forPeriods = Json::Number(value, "forPeriods", 1),
+                .clearPeriods = Json::Number(value, "clearPeriods", 1),
+                .noDataAfterPeriods = Json::Number(value, "noDataAfterPeriods"),
+                .enabled = Json::Flag(value, "enabled", true),
+                .description = Json::Text(value, "description"),
+                .accountId = Json::Text(value, "accountId"),
+                // "namespace" on the wire here too.
+                .nameSpace = Json::Text(value, "namespace"),
+                .created = Json::Text(value, "created"),
+                .modified = Json::Text(value, "modified"),
+        };
+    }
+
+    Alert ToAlert(const boost::json::value &value) {
+        return {
+                .ruleId = Json::Text(value, "ruleId"),
+                .name = Json::Text(value, "name"),
+                .labels = Json::StringMap(value, "labels"),
+                .state = Json::Text(value, "state"),
+                .severity = Json::Text(value, "severity"),
+                .since = Json::Text(value, "since"),
+                .value = Json::Real(value, "value"),
+                .lastSeen = Json::Text(value, "lastSeen"),
+                .statistic = Json::Text(value, "statistic"),
+                .comparison = Json::Text(value, "comparison"),
+                .warning = optionalNumber(value, "warning"),
+                .critical = optionalNumber(value, "critical"),
+                .description = Json::Text(value, "description"),
+                .nameSpace = Json::Text(value, "namespace"),
+        };
+    }
+
+    AlertTransition ToAlertTransition(const boost::json::value &value) {
+        return {
+                .ruleId = Json::Text(value, "ruleId"),
+                .name = Json::Text(value, "name"),
+                .labels = Json::StringMap(value, "labels"),
+                .previous = Json::Text(value, "previous"),
+                .state = Json::Text(value, "state"),
+                .severity = Json::Text(value, "severity"),
+                .value = Json::Real(value, "value"),
+                .threshold = optionalNumber(value, "threshold"),
+                .statistic = Json::Text(value, "statistic"),
+                .reason = Json::Text(value, "reason"),
+                .timestamp = Json::Text(value, "timestamp"),
+                .accountId = Json::Text(value, "accountId"),
+                .nameSpace = Json::Text(value, "namespace"),
+        };
+    }
+
+    Dashboard ToDashboard(const boost::json::value &value) {
+        return {
+                .name = Json::Text(value, "name"),
+                // Absent on a listing, which carries names and times only.
+                .layout = Json::Object(Json::Child(value, "dashboard")),
+                .created = Json::Text(value, "created"),
+                .modified = Json::Text(value, "modified"),
         };
     }
 

@@ -17,9 +17,130 @@ namespace Euclid::CDK::ESM {
                 .encryptionKeyErn = Json::Text(value, "encryptionKeyErn"),
                 .internal = Json::Flag(value, "internal"),
                 .priority = Json::Text(value, "priority"),
+                .versioning = Json::Flag(value, "versioning"),
+                .stopped = Json::Flag(value, "stopped"),
                 .created = Json::Text(value, "created"),
                 .modified = Json::Text(value, "modified"),
         };
+    }
+
+    BucketVersioningResult ToBucketVersioningResult(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                .name = Json::Text(value, "name"),
+                .versioning = Json::Flag(value, "versioning"),
+        };
+    }
+
+    ObjectVersion ToObjectVersion(const boost::json::value &value) {
+        return {
+                .versionId = Json::Text(value, "versionId"),
+                .latest = Json::Flag(value, "latest"),
+                .size = Json::Number(value, "size"),
+                .md5Sum = Json::Text(value, "md5Sum"),
+                .contentType = Json::Text(value, "contentType"),
+                .status = Json::Text(value, "status"),
+                .lifecycleState = Json::Text(value, "lifecycleState"),
+                .owner = Json::Text(value, "owner"),
+                .modified = Json::Text(value, "modified"),
+        };
+    }
+
+    ObjectVersions ToObjectVersions(const boost::json::value &value) {
+
+        ObjectVersions versions{
+                .bucketErn = Json::Text(value, "bucketErn"),
+                .key = Json::Text(value, "key"),
+                .ern = Json::Text(value, "ern"),
+                .versioning = Json::Flag(value, "versioning"),
+                .versions = {},
+                .total = Json::Number(value, "total"),
+        };
+        for (const auto &document: Json::Documents(value, "versions")) {
+            versions.versions.push_back(ToObjectVersion(document));
+        }
+        return versions;
+    }
+
+    LifecycleRule ToLifecycleRule(const boost::json::value &value) {
+        return {
+                .id = Json::Text(value, "id"),
+                .prefix = Json::Text(value, "prefix"),
+                .archiveAfterDays = Json::Number(value, "archiveAfterDays"),
+                .restoreDays = Json::Number(value, "restoreDays"),
+                // Defaulted true, as the server does when a rule says nothing: a rule written
+                // without the field is one that applies.
+                .enabled = Json::Flag(value, "enabled", true),
+        };
+    }
+
+    BucketLifecycle ToBucketLifecycle(const boost::json::value &value) {
+
+        BucketLifecycle lifecycle{
+                .ern = Json::Text(value, "ern"),
+                .name = Json::Text(value, "name"),
+                .rules = {},
+        };
+        for (const auto &document: Json::Documents(value, "rules")) {
+            lifecycle.rules.push_back(ToLifecycleRule(document));
+        }
+        return lifecycle;
+    }
+
+    ObjectLifecycle ToObjectLifecycle(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                .bucketErn = Json::Text(value, "bucketErn"),
+                .key = Json::Text(value, "key"),
+                .lifecycleState = Json::Text(value, "lifecycleState"),
+                // Sent only when they apply, and empty is how "does not apply" reads here.
+                .archivedAt = Json::Text(value, "archivedAt"),
+                .restoredAt = Json::Text(value, "restoredAt"),
+                .restoredUntil = Json::Text(value, "restoredUntil"),
+                .archiveFile = Json::Text(value, "archiveFile"),
+        };
+    }
+
+    BucketStateResult ToBucketStateResult(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                .name = Json::Text(value, "name"),
+                .stopped = Json::Flag(value, "stopped"),
+                // One of the two is sent, depending on which way the bucket went.
+                .held = Json::Number(value, "held"),
+                .released = Json::Number(value, "released"),
+        };
+    }
+
+    VerifyProblem ToVerifyProblem(const boost::json::value &value) {
+        return {
+                .key = Json::Text(value, "key"),
+                .ern = Json::Text(value, "ern"),
+                .problem = Json::Text(value, "problem"),
+                .recordedSize = Json::Number(value, "recordedSize"),
+                .fileSize = Json::Number(value, "fileSize"),
+                .expectedFileSize = Json::Number(value, "expectedFileSize"),
+                .internalName = Json::Text(value, "internalName"),
+                .internalDir = Json::Text(value, "internalDir"),
+                .created = Json::Text(value, "created"),
+        };
+    }
+
+    VerifyResult ToVerifyResult(const boost::json::value &value) {
+
+        VerifyResult result{
+                .bucketErn = Json::Text(value, "bucketErn"),
+                .afterKey = Json::Text(value, "afterKey"),
+                .scanned = Json::Number(value, "scanned"),
+                .checked = Json::Number(value, "checked"),
+                .skipped = Json::Number(value, "skipped"),
+                .problems = {},
+                .nextKey = Json::Text(value, "nextKey"),
+        };
+        for (const auto &document: Json::Documents(value, "problems")) {
+            result.problems.push_back(ToVerifyProblem(document));
+        }
+        return result;
     }
 
     Object ToObject(const boost::json::value &value) {

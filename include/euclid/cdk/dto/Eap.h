@@ -33,6 +33,22 @@
 namespace Euclid::CDK::EAP {
 
     /**
+     * @brief One resource a declaration altered, and what about it changed.
+     */
+    struct EUCLID_CDK_API InfrastructureChange {
+        std::string ern;
+        std::vector<std::string> changes;
+    };
+
+    /**
+     * @brief One resource a reconcile left alone, and why.
+     */
+    struct EUCLID_CDK_API InfrastructureKept {
+        std::string ern;
+        std::string reason;
+    };
+
+    /**
      * @brief One running instance of an application, and where it can be reached.
      *
      * @par
@@ -199,10 +215,46 @@ namespace Euclid::CDK::EAP {
      * diffed, so the same role appears as revoked and granted again.
      */
     struct EUCLID_CDK_API InfrastructureResult {
+
+        /**
+         * @brief The application this was about. Empty for a platform, which sets `platform`.
+         */
         std::string applicationId;
+
+        /**
+         * @brief The platform this was about, for ApplyPlatform() and PlanPlatform(). Empty for an
+         * application.
+         */
+        std::string platform;
         bool declared{};
+
+        /**
+         * @brief Whether this was a dry run - true from PlanInfrastructure() and PlanPlatform(),
+         * where nothing was changed and the lists are what *would* happen.
+         */
+        bool dryRun{};
         std::vector<std::string> created;
+
+        /**
+         * @brief What already existed and was taken over, rather than created.
+         *
+         * @par
+         * Adoption is how a declaration takes charge of something provisioned by hand; it is not
+         * creation, and separating the two is what makes an apply over existing resources readable.
+         */
+        std::vector<std::string> adopted;
+
+        /**
+         * @brief What existed and was altered, with what changed about each.
+         */
+        std::vector<InfrastructureChange> updated;
         std::vector<std::string> deleted;
+
+        /**
+         * @brief What was left alone, and why - a resource the declaration no longer names but
+         * which this application does not own is kept rather than deleted, and says so here.
+         */
+        std::vector<InfrastructureKept> kept;
         std::vector<std::string> granted;
         std::vector<std::string> revoked;
     };
@@ -300,6 +352,241 @@ namespace Euclid::CDK::EAP {
     };
 
     /**
+     * @brief A platform declaration, as it was applied.
+     *
+     * @par
+     * A platform is a declaration with no application behind it: it owns resources and uses none,
+     * since it has no principal to grant anything to. What it owns is tagged with its own name.
+     */
+    struct EUCLID_CDK_API Platform {
+        std::string name;
+        std::string nameSpace;
+
+        /**
+         * @brief The ERNs this platform owns, which is what a later apply reconciles against.
+         */
+        std::vector<std::string> owns;
+
+        /**
+         * @brief The declaration as it was handed over. Null on a record whose stored text will not
+         * parse, which is why this is a value rather than an object.
+         */
+        boost::json::value declaration;
+        std::string modified;
+    };
+
+    /**
+     * @brief How fast an application may call one site.
+     */
+    struct EUCLID_CDK_API EgressLimits {
+
+        /**
+         * @brief Sustained rate, in requests per second.
+         */
+        double requestsPerSecond{};
+
+        /**
+         * @brief How much of that rate may be spent at once, as a multiple of a second's worth - so
+         * a burst of 1 is no burst at all.
+         */
+        double burst{};
+
+        /**
+         * @brief How many calls may be in flight together; 0 is no ceiling.
+         */
+        long concurrent{};
+    };
+
+    /**
+     * @brief One site an application calls, and the limits in force on it.
+     */
+    struct EUCLID_CDK_API EgressSite {
+        std::string applicationId;
+
+        /**
+         * @brief The host name, or "*" for every site this application calls.
+         */
+        std::string site;
+        EgressLimits limits;
+
+        /**
+         * @brief Whether those limits were set for this site, or are the installation's default.
+         *
+         * @par
+         * Worth reading before changing one: a site showing the default has no limit of its own,
+         * and DeleteEgressLimit() on it would answer 404.
+         */
+        bool limitsSet{};
+        std::string lastUsed;
+    };
+
+    /**
+     * @brief Every site an application has called, and what applies when nothing was set.
+     */
+    struct EUCLID_CDK_API EgressSites {
+        EgressLimits defaultLimits;
+        std::vector<EgressSite> sites;
+    };
+
+    /**
+     * @brief Permission to make one call to one site - or the refusal, with when to try again.
+     */
+    struct EUCLID_CDK_API EgressPermit {
+        std::string applicationId;
+        std::string site;
+
+        /**
+         * @brief Whether the call may go ahead. **This is the field to branch on**: a refusal is an
+         * ordinary answer rather than an error, because being rate limited is not a fault.
+         */
+        bool granted{};
+        EgressLimits limits;
+
+        /**
+         * @brief What ReleaseEgressPermit() takes. Empty on a refusal.
+         */
+        std::string permitId;
+
+        /**
+         * @brief When the permit lapses on its own if it is never released. Empty on a refusal.
+         */
+        std::string expiresAt;
+
+        /**
+         * @brief Why it was refused - which limit was reached. Empty on a grant.
+         */
+        std::string reason;
+
+        /**
+         * @brief How long to wait before asking again, in milliseconds. Zero on a grant.
+         */
+        long retryAfterMs{};
+    };
+
+    /**
+     * @brief What releasing a permit came to.
+     */
+    struct EUCLID_CDK_API EgressRelease {
+        std::string applicationId;
+        std::string site;
+
+        /**
+         * @brief Whether a permit of that id was actually holding a slot. False is not an error:
+         * a permit that had already lapsed releases nothing.
+         */
+        bool released{};
+    };
+
+    /**
+     * @brief How long a site is being left alone after it asked to be.
+     */
+    struct EUCLID_CDK_API EgressThrottled {
+        std::string applicationId;
+        std::string site;
+
+        /**
+         * @brief Until when no permit for this site will be granted.
+         */
+        std::string blockedUntil;
+    };
+
+    /**
+     * @brief What a rebalance request came to.
+     *
+     * @par
+     * "rebalancing" says the request was recorded, not that anything has moved: where each instance
+     * ends up is the manager's to decide over its next passes. "instances" is what there was to
+     * move when the request was answered.
+     */
+    struct EUCLID_CDK_API RebalanceResult {
+        std::string applicationId;
+        bool rebalancing{};
+        long instances{};
+    };
+
+    /**
+     * @brief Whether a node is being kept clear of new instances.
+     */
+    struct EUCLID_CDK_API DrainResult {
+        std::string node;
+        bool drained{};
+    };
+
+    /**
+     * @brief A node's registration, and how long its lease lasts.
+     */
+    struct EUCLID_CDK_API NodeRegistration {
+        Node node;
+
+        /**
+         * @brief How long the lease is good for. A worker renews well inside this, because a lease
+         * that lapses is a node the manager stops placing on.
+         */
+        long leaseSeconds{};
+    };
+
+    /**
+     * @brief One instance a node has been told to run, with everything needed to run it.
+     */
+    struct EUCLID_CDK_API AssignedInstance {
+        std::string instanceId;
+        std::string applicationId;
+        std::string runtimeName;
+
+        /**
+         * @brief What revision of the application this assignment is for.
+         *
+         * @par
+         * A worker compares it against what it is running: a change means the instance has to be
+         * replaced. The fields deliberately left out of it - the log level, the memory and CPU
+         * ceilings - are the ones that can change without a restart.
+         */
+        std::string revision;
+        std::string leaseExpiresAt;
+        std::string bucketErn;
+        std::string artifactKey;
+        long artifactSize{};
+        std::string md5Sum;
+        std::string runtime;
+        std::map<std::string, std::string> environment;
+        std::string accountId;
+        std::string nameSpace;
+        std::string logLevel;
+        long memoryLimitMb{};
+        double cpuLimit{};
+    };
+
+    /**
+     * @brief What a heartbeat came back with: the lease, and what this node should be running.
+     */
+    struct EUCLID_CDK_API NodeRenewal {
+        std::string node;
+        long leaseSeconds{};
+        std::string leaseExpiresAt;
+
+        /**
+         * @brief Every instance assigned to this node now - the whole set, not what changed. A
+         * worker reconciles against it: start what is here and not running, stop what is running
+         * and not here.
+         */
+        std::vector<AssignedInstance> instances;
+    };
+
+    /**
+     * @brief One slot given to a node.
+     */
+    struct EUCLID_CDK_API InstanceAssignment {
+        std::string runtimeName;
+        std::string instanceId;
+
+        /**
+         * @brief The node it went to, empty for the manager's own host.
+         */
+        std::string node;
+        std::string leaseExpiresAt;
+    };
+
+    /**
      * @brief Reads one instance of an application.
      */
     [[nodiscard]]
@@ -340,6 +627,96 @@ namespace Euclid::CDK::EAP {
      */
     [[nodiscard]]
     EUCLID_CDK_API Node ToNode(const boost::json::value &value);
+
+    /**
+     * @brief Reads one altered resource.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API InfrastructureChange ToInfrastructureChange(const boost::json::value &value);
+
+    /**
+     * @brief Reads one kept resource.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API InfrastructureKept ToInfrastructureKept(const boost::json::value &value);
+
+    /**
+     * @brief Reads a platform record.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API Platform ToPlatform(const boost::json::value &value);
+
+    /**
+     * @brief Reads a set of egress limits.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API EgressLimits ToEgressLimits(const boost::json::value &value);
+
+    /**
+     * @brief Reads one egress site.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API EgressSite ToEgressSite(const boost::json::value &value);
+
+    /**
+     * @brief Reads a list-egress-sites response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API EgressSites ToEgressSites(const boost::json::value &value);
+
+    /**
+     * @brief Reads an acquire-egress-permit response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API EgressPermit ToEgressPermit(const boost::json::value &value);
+
+    /**
+     * @brief Reads a release-egress-permit response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API EgressRelease ToEgressRelease(const boost::json::value &value);
+
+    /**
+     * @brief Reads a report-egress-throttled response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API EgressThrottled ToEgressThrottled(const boost::json::value &value);
+
+    /**
+     * @brief Reads a rebalance-application response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API RebalanceResult ToRebalanceResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads a drain-node response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API DrainResult ToDrainResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads a register-node response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API NodeRegistration ToNodeRegistration(const boost::json::value &value);
+
+    /**
+     * @brief Reads one assigned instance.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API AssignedInstance ToAssignedInstance(const boost::json::value &value);
+
+    /**
+     * @brief Reads a renew-node response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API NodeRenewal ToNodeRenewal(const boost::json::value &value);
+
+    /**
+     * @brief Reads an assign-instance response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API InstanceAssignment ToInstanceAssignment(const boost::json::value &value);
 
     /**
      * @brief Reads a report-load response.

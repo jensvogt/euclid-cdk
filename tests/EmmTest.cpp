@@ -262,6 +262,50 @@ BOOST_AUTO_TEST_SUITE(EmmSizingTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EmmBackupTest)
+
+    BOOST_AUTO_TEST_CASE(ListsTheBackupsAndTheScheduleThatWritesThem) {
+        const EmmClient client(Test::Answering(R"({"directory": "/var/backups/euclid", "enabled": true,
+                                                   "schedule": "0 3 * * *", "keep": 7, "full": false,
+                                                   "encrypted": true,
+                                                   "backups": [{"name": "euclid-2026-11-06.tar", "size": 4096,
+                                                                "complete": true, "accountId": "", "namespace": ""},
+                                                               {"name": "euclid-2026-11-05.tar", "complete": false}]})"));
+
+        const auto backups = client.emm.ListBackups();
+
+        BOOST_TEST(backups.schedule == "0 3 * * *");
+        BOOST_TEST(backups.keep == 7L);
+        BOOST_TEST(backups.encrypted);
+        BOOST_REQUIRE(backups.backups.size() == 2U);
+        BOOST_TEST(backups.backups[0].complete);
+        // A run interrupted mid-write: the payload is left where it is rather than cleaned away,
+        // so an interrupted backup is visible instead of silently absent.
+        BOOST_TEST(!backups.backups[1].complete);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "list-backups");
+    }
+
+    // Absent follows the installation's own setting, and false is a decision - so the field only
+    // travels when the caller made one.
+    BOOST_AUTO_TEST_CASE(StartsABackupAndOnlySendsFullWhenTold) {
+        const EmmClient client(Test::Answering(R"({"name": "euclid-2026-11-06.tar", "startedAt": "2026-11-06T03:00:00Z",
+                                                   "full": false, "encrypted": true})"));
+
+        const auto started = client.emm.CreateBackup();
+        BOOST_TEST(started.name == "euclid-2026-11-06.tar");
+        // Worth reading rather than assuming: a full backup is dropped when a passphrase is set.
+        BOOST_TEST(!started.full);
+        BOOST_TEST(!lastBody(client.gateway).as_object().contains("full"));
+
+        std::ignore = client.emm.CreateBackup(false);
+        BOOST_TEST(lastBody(client.gateway).at("full").as_bool() == false);
+
+        std::ignore = client.emm.CreateBackup(true);
+        BOOST_TEST(lastBody(client.gateway).at("full").as_bool() == true);
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EmmArchiveTest)
 
     // Exactly one of "all" and a module list, so naming no modules sends "all" rather than an empty

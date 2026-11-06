@@ -63,6 +63,24 @@ namespace Euclid::CDK::ESM {
          * into - see ESM::Esm::SetBucketPriority().
          */
         std::string priority;
+
+        /**
+         * @brief Whether this bucket keeps the previous object when a key is written again.
+         *
+         * @par
+         * Off by default, because keeping every version costs disk for as long as the bucket
+         * exists. ESM::Esm::ListObjectVersions() is what reads them back.
+         */
+        bool versioning{};
+
+        /**
+         * @brief Whether the bucket's events are being held.
+         *
+         * @par
+         * A stopped bucket still stores and serves objects - what stops is the notifications about
+         * them. See ESM::Esm::StopBucket().
+         */
+        bool stopped{};
         std::string created;
         std::string modified;
     };
@@ -346,10 +364,277 @@ namespace Euclid::CDK::ESM {
     };
 
     /**
+     * @brief Whether a bucket keeps previous versions, after a change.
+     */
+    struct EUCLID_CDK_API BucketVersioningResult {
+        std::string ern;
+        std::string name;
+        bool versioning{};
+    };
+
+    /**
+     * @brief One stored version of one key.
+     */
+    struct EUCLID_CDK_API ObjectVersion {
+
+        /**
+         * @brief What names this version in the calls that take one.
+         */
+        std::string versionId;
+
+        /**
+         * @brief Whether this is the object a plain read of the key returns.
+         */
+        bool latest{};
+        long size{};
+        std::string md5Sum;
+        std::string contentType;
+        std::string status;
+
+        /**
+         * @brief LifecycleStandard or LifecycleArchived.
+         */
+        std::string lifecycleState;
+        std::string owner;
+        std::string modified;
+    };
+
+    /**
+     * @brief Every version of one key, newest first.
+     *
+     * @par
+     * The current object comes first with ObjectVersion::latest true, and the stored versions
+     * follow. A key whose current object was deleted still lists its versions, which is what makes
+     * a deletion recoverable.
+     */
+    struct EUCLID_CDK_API ObjectVersions {
+        std::string bucketErn;
+        std::string key;
+
+        /**
+         * @brief The key's own ERN, which is what versions are kept under.
+         */
+        std::string ern;
+
+        /**
+         * @brief Whether the bucket is keeping versions now - which is not whether these exist: a
+         * bucket switched off still holds what it kept while it was on.
+         */
+        bool versioning{};
+        std::vector<ObjectVersion> versions;
+        long total{};
+    };
+
+    /**
+     * @brief One rule saying what a bucket archives, and when.
+     */
+    struct EUCLID_CDK_API LifecycleRule {
+
+        /**
+         * @brief What this rule is called, unique within the bucket. Two rules of one name are
+         * refused rather than the second replacing the first.
+         */
+        std::string id;
+
+        /**
+         * @brief The key prefix the rule covers, or empty for the whole bucket.
+         */
+        std::string prefix;
+
+        /**
+         * @brief How old an object has to be before it is archived, in days.
+         */
+        long archiveAfterDays{};
+
+        /**
+         * @brief How long a restore of an object this rule covers stays online before it is
+         * archived again, in days.
+         */
+        long restoreDays{};
+
+        /**
+         * @brief Whether the rule is acted on. A disabled rule is kept rather than deleted, so it
+         * can be turned off without being rewritten from memory.
+         */
+        bool enabled{true};
+    };
+
+    /**
+     * @brief A bucket's lifecycle rules, as they now stand.
+     */
+    struct EUCLID_CDK_API BucketLifecycle {
+        std::string ern;
+        std::string name;
+        std::vector<LifecycleRule> rules;
+    };
+
+    /**
+     * @brief Where one object stands between online and archived.
+     *
+     * @par
+     * The dates are empty unless they apply: an object that was never archived has no archivedAt,
+     * and one that is archived now has no restoredUntil.
+     */
+    struct EUCLID_CDK_API ObjectLifecycle {
+        std::string ern;
+        std::string bucketErn;
+        std::string key;
+
+        /**
+         * @brief LifecycleStandard or LifecycleArchived.
+         */
+        std::string lifecycleState;
+        std::string archivedAt;
+        std::string restoredAt;
+
+        /**
+         * @brief When a restored object goes back to being archived. Empty on one that is not
+         * restored, and it is what says a restore is temporary rather than permanent.
+         */
+        std::string restoredUntil;
+
+        /**
+         * @brief The archive the bytes are in while the object is archived.
+         */
+        std::string archiveFile;
+    };
+
+    /**
+     * @brief What stopping or starting a bucket came to.
+     */
+    struct EUCLID_CDK_API BucketStateResult {
+        std::string ern;
+        std::string name;
+        bool stopped{};
+
+        /**
+         * @brief How many deliveries are being held, after a stop.
+         */
+        long held{};
+
+        /**
+         * @brief How many were let go, after a start.
+         */
+        long released{};
+    };
+
+    /**
+     * @brief One object whose file does not match its record.
+     */
+    struct EUCLID_CDK_API VerifyProblem {
+        std::string key;
+        std::string ern;
+
+        /**
+         * @brief What is wrong - a missing file, a size that disagrees, and so on.
+         */
+        std::string problem;
+
+        /**
+         * @brief What the record says the object is.
+         */
+        long recordedSize{};
+
+        /**
+         * @brief What the file on disk actually is.
+         */
+        long fileSize{};
+
+        /**
+         * @brief What the file should be, which is not recordedSize for an encrypted object - its
+         * file carries a header.
+         */
+        long expectedFileSize{};
+        std::string internalName;
+        std::string internalDir;
+        std::string created;
+    };
+
+    /**
+     * @brief What one pass of a verification found.
+     *
+     * @par
+     * A stat per object, and a header read for an encrypted one - never the bytes. Objects still
+     * being uploaded, archived ones (whose bytes are in an archive rather than a file) and
+     * directory markers are counted as skipped rather than checked.
+     */
+    struct EUCLID_CDK_API VerifyResult {
+        std::string bucketErn;
+
+        /**
+         * @brief The key this pass started after.
+         */
+        std::string afterKey;
+        long scanned{};
+        long checked{};
+        long skipped{};
+        std::vector<VerifyProblem> problems;
+
+        /**
+         * @brief Where the next pass should start, or empty at the end of the bucket.
+         */
+        std::string nextKey;
+    };
+
+    /**
      * @brief Reads a bucket.
      */
     [[nodiscard]]
     EUCLID_CDK_API Bucket ToBucket(const boost::json::value &value);
+
+    /**
+     * @brief Reads a set-bucket-versioning response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API BucketVersioningResult ToBucketVersioningResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads one version of an object.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API ObjectVersion ToObjectVersion(const boost::json::value &value);
+
+    /**
+     * @brief Reads a list-object-versions response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API ObjectVersions ToObjectVersions(const boost::json::value &value);
+
+    /**
+     * @brief Reads one lifecycle rule.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API LifecycleRule ToLifecycleRule(const boost::json::value &value);
+
+    /**
+     * @brief Reads a bucket's lifecycle rules.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API BucketLifecycle ToBucketLifecycle(const boost::json::value &value);
+
+    /**
+     * @brief Reads an archive-object or restore-object response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API ObjectLifecycle ToObjectLifecycle(const boost::json::value &value);
+
+    /**
+     * @brief Reads a start-bucket or stop-bucket response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API BucketStateResult ToBucketStateResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads one verification problem.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API VerifyProblem ToVerifyProblem(const boost::json::value &value);
+
+    /**
+     * @brief Reads a verify-objects response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API VerifyResult ToVerifyResult(const boost::json::value &value);
 
     /**
      * @brief Reads a stored object.

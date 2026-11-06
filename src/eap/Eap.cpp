@@ -166,6 +166,107 @@ namespace Euclid::CDK::EAP {
         return ApplicationOf("get-application", {{"applicationId", applicationId}});
     }
 
+    Application Eap::SetApplicationLimits(const std::string &applicationId, const ApplicationLimitOptions &options) const {
+
+        // Refused here because the server refuses it too, and the argument says so without a round
+        // trip: -1 for both asks for no change at all.
+        if (options.memoryLimitMb < 0 && options.cpuLimit < 0.0) {
+            throw EuclidError("set at least one of memoryLimitMb or cpuLimit - -1 leaves a ceiling as it stands, "
+                              "and 0 removes it");
+        }
+
+        boost::json::object payload{{"applicationId", applicationId}};
+        // Sent only when asked for: the server reads an absent ceiling as "leave it alone", and
+        // zero is a decision - it removes the ceiling - so the test is against zero.
+        if (options.memoryLimitMb >= 0) payload["memoryLimitMb"] = options.memoryLimitMb;
+        if (options.cpuLimit >= 0.0) payload["cpuLimit"] = options.cpuLimit;
+
+        return ApplicationOf("set-application-limits", payload);
+    }
+
+    RebalanceResult Eap::RebalanceApplication(const std::string &applicationId) const {
+        return ToRebalanceResult(Call("rebalance-application", {{"applicationId", applicationId}}));
+    }
+
+    InfrastructureResult Eap::PlanInfrastructure(const std::string &applicationId) const {
+        return ToInfrastructureResult(Call("plan-infrastructure", {{"applicationId", applicationId}}));
+    }
+
+    // -- platforms ----------------------------------------------------------------------------------
+
+    InfrastructureResult Eap::ApplyPlatform(const std::string &name, const boost::json::value &declaration,
+                                            const bool prune) const {
+        return ToInfrastructureResult(Call("apply-platform", PlatformPayload(name, declaration, prune)));
+    }
+
+    InfrastructureResult Eap::PlanPlatform(const std::string &name, const boost::json::value &declaration,
+                                           const bool prune) const {
+        return ToInfrastructureResult(Call("plan-platform", PlatformPayload(name, declaration, prune)));
+    }
+
+    Platform Eap::GetPlatform(const std::string &name) const {
+        return ToPlatform(Call("get-platform", {{"name", name}}));
+    }
+
+    std::vector<Platform> Eap::ListPlatforms() const {
+        std::vector<Platform> platforms;
+        for (const auto &document: Json::Documents(Call("list-platforms"), "platforms")) {
+            platforms.push_back(ToPlatform(document));
+        }
+        return platforms;
+    }
+
+    // -- egress -------------------------------------------------------------------------------------
+
+    EgressPermit Eap::AcquireEgressPermit(const std::string &site, const EgressPermitOptions &options) const {
+        const boost::json::object payload{{"site", site}, {"leaseSeconds", options.leaseSeconds.count()}};
+        return ToEgressPermit(Call("acquire-egress-permit", payload));
+    }
+
+    EgressRelease Eap::ReleaseEgressPermit(const std::string &site, const std::string &permitId) const {
+        const boost::json::object payload{{"site", site}, {"permitId", permitId}};
+        return ToEgressRelease(Call("release-egress-permit", payload));
+    }
+
+    EgressThrottled Eap::ReportEgressThrottled(const std::string &site, const long retryAfterSeconds) const {
+        const boost::json::object payload{{"site", site}, {"retryAfterSeconds", retryAfterSeconds}};
+        return ToEgressThrottled(Call("report-egress-throttled", payload));
+    }
+
+    EgressSite Eap::SetEgressLimit(const std::string &site, const EgressLimits &limits,
+                                   const std::string &applicationId) const {
+
+        boost::json::object payload{
+                {"site", site},
+                {"requestsPerSecond", limits.requestsPerSecond},
+                {"burst", limits.burst},
+                {"concurrent", limits.concurrent},
+        };
+        // Left out when empty: absent is what asks about the calling application itself, which is
+        // what an application setting its own limits means.
+        if (!applicationId.empty()) payload["applicationId"] = applicationId;
+
+        return ToEgressSite(Call("set-egress-limit", payload));
+    }
+
+    EgressSite Eap::DeleteEgressLimit(const std::string &site, const std::string &applicationId) const {
+        boost::json::object payload{{"site", site}};
+        if (!applicationId.empty()) payload["applicationId"] = applicationId;
+        return ToEgressSite(Call("delete-egress-limit", payload));
+    }
+
+    EgressSites Eap::ListEgressSites(const std::string &applicationId) const {
+        boost::json::object payload;
+        if (!applicationId.empty()) payload["applicationId"] = applicationId;
+        return ToEgressSites(Call("list-egress-sites", payload));
+    }
+
+    void Eap::DeleteEgressSite(const std::string &site, const std::string &applicationId) const {
+        boost::json::object payload{{"site", site}};
+        if (!applicationId.empty()) payload["applicationId"] = applicationId;
+        std::ignore = Call("delete-egress-site", payload);
+    }
+
     // -- nodes --------------------------------------------------------------------------------------
 
     std::vector<Node> Eap::ListNodes() const {
@@ -182,6 +283,81 @@ namespace Euclid::CDK::EAP {
 
     void Eap::DeleteNode(const std::string &node) const {
         std::ignore = Call("delete-node", {{"node", node}});
+    }
+
+    NodeRegistration Eap::RegisterNode(const std::string &node, const RegisterNodeOptions &options) const {
+
+        boost::json::object labels;
+        for (const auto &[key, value]: options.labels) labels[key] = value;
+
+        const boost::json::object payload{
+                {"node", node},
+                {"address", options.address},
+                {"version", options.version},
+                {"os", options.os},
+                {"arch", options.arch},
+                {"labels", std::move(labels)},
+        };
+        return ToNodeRegistration(Call("register-node", payload));
+    }
+
+    NodeRenewal Eap::RenewNode(const std::string &node, const RenewNodeOptions &options) const {
+
+        boost::json::object payload{{"node", node}, {"loadAverage", options.loadAverage}};
+        // Sent only when the worker measured them: the server reads an absent figure as "a worker
+        // older than the field" rather than as a machine with no memory, and zero would be read as
+        // the former anyway.
+        if (options.memoryTotalMb > 0) payload["memoryTotalMb"] = options.memoryTotalMb;
+        if (options.memoryUsedMb > 0) payload["memoryUsedMb"] = options.memoryUsedMb;
+
+        return ToNodeRenewal(Call("renew-node", payload));
+    }
+
+    DrainResult Eap::DrainNode(const std::string &node, const bool drained) const {
+        // Always sent, both ways: absent means drain, because that is what the action is called, so
+        // putting a node back has to say so explicitly.
+        return ToDrainResult(Call("drain-node", {{"node", node}, {"drained", drained}}));
+    }
+
+    InstanceAssignment Eap::AssignInstance(const std::string &runtimeName, const std::string &instanceId,
+                                           const std::string &node) const {
+
+        // The node travels even when empty, because empty is what takes the slot back to the
+        // manager's own host - a legitimate thing to ask for, and not the same as not saying.
+        const boost::json::object payload{
+                {"runtimeName", runtimeName},
+                {"instanceId", instanceId},
+                {"node", node},
+        };
+        return ToInstanceAssignment(Call("assign-instance", payload));
+    }
+
+    void Eap::ReportNodeInstance(const std::string &runtimeName, const std::string &instanceId,
+                                 const ReportInstanceOptions &options) const {
+
+        boost::json::object payload{
+                {"runtimeName", runtimeName},
+                {"instanceId", instanceId},
+                {"httpPort", options.httpPort},
+                {"pid", options.pid},
+        };
+        // Left out when empty: the server reads an absent state as RUNNING, and an empty string
+        // would parse as no state at all.
+        if (!options.state.empty()) payload["state"] = options.state;
+        if (!options.startedAt.empty()) payload["startedAt"] = options.startedAt;
+        if (!options.host.empty()) payload["host"] = options.host;
+
+        std::ignore = Call("report-node-instance", payload);
+    }
+
+    boost::json::object Eap::IssueInstanceCredentials(const std::string &runtimeName, const std::string &instanceId) const {
+        const boost::json::object payload{{"runtimeName", runtimeName}, {"instanceId", instanceId}};
+        return Call("issue-instance-credentials", payload);
+    }
+
+    boost::json::object Eap::PlatformPayload(const std::string &name, const boost::json::value &declaration,
+                                             const bool prune) {
+        return {{"name", name}, {"declaration", declaration}, {"prune", prune}};
     }
 
     // -- infrastructure -----------------------------------------------------------------------------

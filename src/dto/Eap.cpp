@@ -70,14 +70,170 @@ namespace Euclid::CDK::EAP {
         };
     }
 
+    InfrastructureChange ToInfrastructureChange(const boost::json::value &value) {
+        return {.ern = Json::Text(value, "ern"), .changes = Json::Strings(value, "changes")};
+    }
+
+    InfrastructureKept ToInfrastructureKept(const boost::json::value &value) {
+        return {.ern = Json::Text(value, "ern"), .reason = Json::Text(value, "reason")};
+    }
+
     InfrastructureResult ToInfrastructureResult(const boost::json::value &value) {
-        return {
+
+        InfrastructureResult result{
                 .applicationId = Json::Text(value, "applicationId"),
+                .platform = Json::Text(value, "platform"),
                 .declared = Json::Flag(value, "declared"),
+                .dryRun = Json::Flag(value, "dryRun"),
                 .created = Json::Strings(value, "created"),
+                .adopted = Json::Strings(value, "adopted"),
+                .updated = {},
                 .deleted = Json::Strings(value, "deleted"),
+                .kept = {},
                 .granted = Json::Strings(value, "granted"),
                 .revoked = Json::Strings(value, "revoked"),
+        };
+
+        for (const auto &document: Json::Documents(value, "updated")) {
+            result.updated.push_back(ToInfrastructureChange(document));
+        }
+        for (const auto &document: Json::Documents(value, "kept")) {
+            result.kept.push_back(ToInfrastructureKept(document));
+        }
+        return result;
+    }
+
+    Platform ToPlatform(const boost::json::value &value) {
+        return {
+                .name = Json::Text(value, "name"),
+                .nameSpace = Json::Text(value, "namespace"),
+                .owns = Json::Strings(value, "owns"),
+                // A value rather than an object: the server sends null for a stored declaration
+                // whose text will not parse, which is a record worth seeing rather than hiding.
+                .declaration = Json::Child(value, "declaration"),
+                .modified = Json::Text(value, "modified"),
+        };
+    }
+
+    EgressLimits ToEgressLimits(const boost::json::value &value) {
+        return {
+                .requestsPerSecond = Json::Real(value, "requestsPerSecond"),
+                .burst = Json::Real(value, "burst"),
+                .concurrent = Json::Number(value, "concurrent"),
+        };
+    }
+
+    EgressSite ToEgressSite(const boost::json::value &value) {
+        return {
+                .applicationId = Json::Text(value, "applicationId"),
+                .site = Json::Text(value, "site"),
+                .limits = ToEgressLimits(Json::Child(value, "limits")),
+                .limitsSet = Json::Flag(value, "limitsSet"),
+                .lastUsed = Json::Text(value, "lastUsed"),
+        };
+    }
+
+    EgressSites ToEgressSites(const boost::json::value &value) {
+
+        EgressSites sites{.defaultLimits = ToEgressLimits(Json::Child(value, "defaultLimits")), .sites = {}};
+        for (const auto &document: Json::Documents(value, "sites")) {
+            sites.sites.push_back(ToEgressSite(document));
+        }
+        return sites;
+    }
+
+    EgressPermit ToEgressPermit(const boost::json::value &value) {
+        return {
+                .applicationId = Json::Text(value, "applicationId"),
+                .site = Json::Text(value, "site"),
+                .granted = Json::Flag(value, "granted"),
+                .limits = ToEgressLimits(Json::Child(value, "limits")),
+                // Sent on a grant only; the next two on a refusal only.
+                .permitId = Json::Text(value, "permitId"),
+                .expiresAt = Json::Text(value, "expiresAt"),
+                .reason = Json::Text(value, "reason"),
+                .retryAfterMs = Json::Number(value, "retryAfterMs"),
+        };
+    }
+
+    EgressRelease ToEgressRelease(const boost::json::value &value) {
+        return {
+                .applicationId = Json::Text(value, "applicationId"),
+                .site = Json::Text(value, "site"),
+                .released = Json::Flag(value, "released"),
+        };
+    }
+
+    EgressThrottled ToEgressThrottled(const boost::json::value &value) {
+        return {
+                .applicationId = Json::Text(value, "applicationId"),
+                .site = Json::Text(value, "site"),
+                .blockedUntil = Json::Text(value, "blockedUntil"),
+        };
+    }
+
+    RebalanceResult ToRebalanceResult(const boost::json::value &value) {
+        return {
+                .applicationId = Json::Text(value, "applicationId"),
+                .rebalancing = Json::Flag(value, "rebalancing"),
+                .instances = Json::Number(value, "instances"),
+        };
+    }
+
+    DrainResult ToDrainResult(const boost::json::value &value) {
+        return {.node = Json::Text(value, "node"), .drained = Json::Flag(value, "drained")};
+    }
+
+    NodeRegistration ToNodeRegistration(const boost::json::value &value) {
+        return {
+                .node = ToNode(Json::Child(value, "node")),
+                .leaseSeconds = Json::Number(value, "leaseSeconds"),
+        };
+    }
+
+    AssignedInstance ToAssignedInstance(const boost::json::value &value) {
+        return {
+                .instanceId = Json::Text(value, "instanceId"),
+                .applicationId = Json::Text(value, "applicationId"),
+                .runtimeName = Json::Text(value, "runtimeName"),
+                .revision = Json::Text(value, "revision"),
+                .leaseExpiresAt = Json::Text(value, "leaseExpiresAt"),
+                .bucketErn = Json::Text(value, "bucketErn"),
+                .artifactKey = Json::Text(value, "artifactKey"),
+                .artifactSize = Json::Number(value, "artifactSize"),
+                .md5Sum = Json::Text(value, "md5Sum"),
+                .runtime = Json::Text(value, "runtime"),
+                .environment = Json::StringMap(value, "environment"),
+                .accountId = Json::Text(value, "accountId"),
+                // "nameSpace" on this one, unlike the rest of this module - it is what the worker
+                // labels the instance's output with rather than a field of the application row.
+                .nameSpace = Json::Text(value, "nameSpace"),
+                .logLevel = Json::Text(value, "logLevel"),
+                .memoryLimitMb = Json::Number(value, "memoryLimitMb"),
+                .cpuLimit = Json::Real(value, "cpuLimit"),
+        };
+    }
+
+    NodeRenewal ToNodeRenewal(const boost::json::value &value) {
+
+        NodeRenewal renewal{
+                .node = Json::Text(value, "node"),
+                .leaseSeconds = Json::Number(value, "leaseSeconds"),
+                .leaseExpiresAt = Json::Text(value, "leaseExpiresAt"),
+                .instances = {},
+        };
+        for (const auto &document: Json::Documents(value, "instances")) {
+            renewal.instances.push_back(ToAssignedInstance(document));
+        }
+        return renewal;
+    }
+
+    InstanceAssignment ToInstanceAssignment(const boost::json::value &value) {
+        return {
+                .runtimeName = Json::Text(value, "runtimeName"),
+                .instanceId = Json::Text(value, "instanceId"),
+                .node = Json::Text(value, "node"),
+                .leaseExpiresAt = Json::Text(value, "leaseExpiresAt"),
         };
     }
 

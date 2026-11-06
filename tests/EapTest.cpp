@@ -446,6 +446,322 @@ BOOST_AUTO_TEST_SUITE(EapNodeTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EapLimitsTest)
+
+    // Absent means "leave that ceiling alone" and zero removes it, so only what was asked for
+    // goes on the wire - and zero has to travel.
+    BOOST_AUTO_TEST_CASE(SendsOnlyTheCeilingItWasGiven) {
+        const EapClient client(Test::Answering(boost::json::serialize(application())));
+
+        std::ignore = client.eap.SetApplicationLimits("order-service", {.memoryLimitMb = 512});
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("memoryLimitMb").as_int64() == 512);
+        BOOST_TEST(!body.as_object().contains("cpuLimit"));
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "set-application-limits");
+
+        std::ignore = client.eap.SetApplicationLimits("order-service", {.cpuLimit = 0.0});
+        BOOST_TEST(lastBody(client.gateway).at("cpuLimit").as_double() == 0.0, boost::test_tools::tolerance(0.001));
+    }
+
+    BOOST_AUTO_TEST_CASE(RefusesAChangeThatNamesNeitherCeiling) {
+        const EapClient client(Test::Answering("{}"));
+
+        BOOST_CHECK_THROW(std::ignore = client.eap.SetApplicationLimits("order-service", {}), EuclidError);
+        BOOST_TEST(client.gateway.Received().size() == 1U);// the login, and nothing else
+    }
+
+    // Nothing has moved when this is answered: where each instance ends up is the manager's to
+    // decide over its next passes.
+    BOOST_AUTO_TEST_CASE(RebalancingAsksRatherThanMoves) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "rebalancing": true, "instances": 4})"));
+
+        const auto result = client.eap.RebalanceApplication("order-service");
+        BOOST_TEST(result.rebalancing);
+        BOOST_TEST(result.instances == 4L);
+    }
+
+    // A job's instance is a run of it, and moving one would start it again.
+    BOOST_AUTO_TEST_CASE(CarriesTheRefusalForAJob) {
+        const FakeGateway gateway(Test::Authenticated([](const Request &) {
+            return FakeGateway::Json(400, R"({"error": "it is a JOB, and moving a run would start it again"})");
+        }));
+        const auto session = Test::Builder(gateway).Login();
+        const EAP::Eap eap(session);
+
+        try {
+            std::ignore = eap.RebalanceApplication("nightly-report");
+            BOOST_FAIL("expected a ServiceError");
+        } catch (const ServiceError &ex) {
+            BOOST_TEST(ex.Status() == 400);
+            BOOST_TEST(ex.Action() == "rebalance-application");
+        }
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(EapInfrastructureTest)
+
+    // The same engine and the same answer as an apply, with dryRun true and nothing changed - and
+    // the lists include what a full reconcile would delete, which is the point of running it.
+    BOOST_AUTO_TEST_CASE(PlanningSaysWhatWouldHappenWithoutDoingIt) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "declared": true,
+                                                   "dryRun": true,
+                                                   "created": ["ern:queue/new"],
+                                                   "adopted": ["ern:bucket/existing"],
+                                                   "updated": [{"ern": "ern:queue/orders", "changes": ["retention"]}],
+                                                   "deleted": ["ern:queue/gone"],
+                                                   "kept": [{"ern": "ern:queue/theirs", "reason": "owned by another application"}],
+                                                   "granted": [], "revoked": []})"));
+
+        const auto plan = client.eap.PlanInfrastructure("order-service");
+
+        BOOST_TEST(plan.dryRun);
+        BOOST_REQUIRE(plan.deleted.size() == 1U);
+        // Adoption is not creation, and separating them is what makes an apply over existing
+        // resources readable.
+        BOOST_REQUIRE(plan.adopted.size() == 1U);
+        BOOST_REQUIRE(plan.updated.size() == 1U);
+        BOOST_TEST(plan.updated[0].changes[0] == "retention");
+        BOOST_REQUIRE(plan.kept.size() == 1U);
+        BOOST_TEST(plan.kept[0].reason == "owned by another application");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "plan-infrastructure");
+    }
+
+    BOOST_AUTO_TEST_CASE(AppliesAPlatformDeclaration) {
+        const EapClient client(Test::Answering(R"({"platform": "shared", "declared": true, "dryRun": false,
+                                                   "created": ["ern:topic/events"]})"));
+
+        const boost::json::object declaration{{"topics", boost::json::array{"events"}}};
+        const auto applied = client.eap.ApplyPlatform("shared", declaration, true);
+
+        BOOST_TEST(applied.platform == "shared");
+        BOOST_TEST(applied.applicationId.empty());
+        BOOST_TEST(!applied.dryRun);
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("name").as_string() == "shared");
+        BOOST_TEST(body.at("prune").as_bool() == true);
+        BOOST_REQUIRE(body.as_object().contains("declaration"));
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "apply-platform");
+    }
+
+    BOOST_AUTO_TEST_CASE(ReadsAPlatformRecord) {
+        const EapClient client(Test::Answering(R"({"name": "platform", "namespace": "production",
+                                                   "owns": ["ern:topic/events", "ern:bucket/shared"],
+                                                   "declaration": {"topics": ["events"]},
+                                                   "modified": "2026-11-06T08:00:00Z"})"));
+
+        const auto platform = client.eap.GetPlatform();
+
+        BOOST_TEST(platform.name == "platform");
+        BOOST_REQUIRE(platform.owns.size() == 2U);
+        BOOST_TEST(platform.declaration.is_object());
+        // The default when none was named at apply time.
+        BOOST_TEST(lastBody(client.gateway).at("name").as_string() == std::string(EAP::DefaultPlatform));
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(EapEgressTest)
+
+    // Several instances of one application share one budget: a limit kept in each process would be
+    // multiplied by the pool size, which is how a fleet gets itself blocked.
+    BOOST_AUTO_TEST_CASE(AcquiresAPermitAndCarriesTheLease) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "site": "downloads.example.com",
+                                                   "granted": true, "permitId": "p-1",
+                                                   "expiresAt": "2026-11-06T08:15:00Z",
+                                                   "limits": {"requestsPerSecond": 5.0, "burst": 2.0, "concurrent": 4}})"));
+
+        const auto permit = client.eap.AcquireEgressPermit("downloads.example.com");
+
+        BOOST_TEST(permit.granted);
+        BOOST_TEST(permit.permitId == "p-1");
+        BOOST_TEST(permit.limits.requestsPerSecond == 5.0, boost::test_tools::tolerance(0.001));
+        BOOST_TEST(permit.limits.concurrent == 4L);
+        BOOST_TEST(lastBody(client.gateway).at("leaseSeconds").as_int64() == EAP::DefaultEgressLease.count());
+    }
+
+    // A refusal is an ordinary answer rather than an error: being rate limited is not a fault, so
+    // "granted" is the field to branch on and nothing throws.
+    BOOST_AUTO_TEST_CASE(ARefusalIsAnAnswerRatherThanAnError) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "site": "downloads.example.com",
+                                                   "granted": false, "reason": "Concurrency", "retryAfterMs": 100,
+                                                   "limits": {"requestsPerSecond": 5.0}})"));
+
+        const auto permit = client.eap.AcquireEgressPermit("downloads.example.com");
+
+        BOOST_TEST(!permit.granted);
+        BOOST_TEST(permit.reason == "Concurrency");
+        BOOST_TEST(permit.retryAfterMs == 100L);
+        BOOST_TEST(permit.permitId.empty());
+    }
+
+    BOOST_AUTO_TEST_CASE(ReleasesAPermitAndReportsAThrottle) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "site": "downloads.example.com",
+                                                   "released": true})"));
+
+        BOOST_TEST(client.eap.ReleaseEgressPermit("downloads.example.com", "p-1").released);
+        BOOST_TEST(lastBody(client.gateway).at("permitId").as_string() == "p-1");
+
+        const EapClient reporter(Test::Answering(R"({"site": "downloads.example.com",
+                                                     "blockedUntil": "2026-11-06T08:05:00Z"})"));
+        // Telling euclid turns one instance's refusal into the whole pool backing off.
+        BOOST_TEST(reporter.eap.ReportEgressThrottled("downloads.example.com", 120).blockedUntil
+                   == "2026-11-06T08:05:00Z");
+        BOOST_TEST(lastBody(reporter.gateway).at("retryAfterSeconds").as_int64() == 120);
+    }
+
+    // An absent applicationId is what asks about the calling application itself, which is what an
+    // application setting its own limits means.
+    BOOST_AUTO_TEST_CASE(LeavesTheApplicationOutWhenItIsTheCallersOwn) {
+        const EapClient client(Test::Answering(R"({"applicationId": "order-service", "site": "*",
+                                                   "limits": {"requestsPerSecond": 10.0, "burst": 1.0, "concurrent": 2},
+                                                   "limitsSet": true})"));
+
+        const auto site = client.eap.SetEgressLimit("*", {.requestsPerSecond = 10.0, .burst = 1.0, .concurrent = 2});
+
+        BOOST_TEST(site.limitsSet);
+        BOOST_TEST(!lastBody(client.gateway).as_object().contains("applicationId"));
+
+        std::ignore = client.eap.SetEgressLimit("*", {.requestsPerSecond = 10.0}, "other-service");
+        BOOST_TEST(lastBody(client.gateway).at("applicationId").as_string() == "other-service");
+    }
+
+    // A site showing the default has no limit of its own, which is what limitsSet is for - and
+    // deleting the limit of such a site answers 404.
+    BOOST_AUTO_TEST_CASE(SaysWhetherASitesLimitsAreItsOwn) {
+        const EapClient client(Test::Answering(R"({"defaultLimits": {"requestsPerSecond": 1.0},
+                                                   "sites": [{"site": "a.example.com", "limitsSet": false,
+                                                              "limits": {"requestsPerSecond": 1.0}},
+                                                             {"site": "b.example.com", "limitsSet": true,
+                                                              "limits": {"requestsPerSecond": 20.0}}]})"));
+
+        const auto sites = client.eap.ListEgressSites();
+
+        BOOST_TEST(sites.defaultLimits.requestsPerSecond == 1.0, boost::test_tools::tolerance(0.001));
+        BOOST_REQUIRE(sites.sites.size() == 2U);
+        BOOST_TEST(!sites.sites[0].limitsSet);
+        BOOST_TEST(sites.sites[1].limitsSet);
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(EapNodeLeaseTest)
+
+    BOOST_AUTO_TEST_CASE(RegistersANodeAndTakesALease) {
+        const EapClient client(Test::Answering(R"({"node": {"name": "worker-1", "principal": "node-worker-1",
+                                                            "live": true}, "leaseSeconds": 60})"));
+
+        const auto registered = client.eap.RegisterNode("worker-1", {.address = "10.0.0.11",
+                                                                     .version = "1.4.0",
+                                                                     .os = "linux",
+                                                                     .arch = "x86_64",
+                                                                     .labels = {{"zone", "a"}}});
+
+        BOOST_TEST(registered.node.name == "worker-1");
+        BOOST_TEST(registered.leaseSeconds == 60L);
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("node").as_string() == "worker-1");
+        BOOST_TEST(body.at("arch").as_string() == "x86_64");
+        BOOST_TEST(body.at("labels").at("zone").as_string() == "a");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "register-node");
+    }
+
+    // The heartbeat carries the machine's readings and comes back with the whole set of instances
+    // this node should run - not what changed, so a worker reconciles against it.
+    BOOST_AUTO_TEST_CASE(RenewingReturnsTheWholeAssignedSet) {
+        const EapClient client(Test::Answering(R"({"node": "worker-1", "leaseSeconds": 60,
+                                                   "leaseExpiresAt": "2026-11-06T08:01:00Z",
+                                                   "instances": [{"instanceId": "i-1", "applicationId": "order-service",
+                                                                  "runtimeName": "order-service-a1b2",
+                                                                  "revision": "2026-11-05T08:00:00Z",
+                                                                  "memoryLimitMb": 512, "cpuLimit": 1.5,
+                                                                  "nameSpace": "production",
+                                                                  "environment": {"EUCLID_LOG_LEVEL": "info"}}]})"));
+
+        const auto renewal = client.eap.RenewNode("worker-1", {.loadAverage = 1.5, .memoryTotalMb = 16384,
+                                                               .memoryUsedMb = 8192});
+
+        BOOST_REQUIRE(renewal.instances.size() == 1U);
+        BOOST_TEST(renewal.instances[0].instanceId == "i-1");
+        // What says an instance has to be replaced rather than left alone.
+        BOOST_TEST(renewal.instances[0].revision == "2026-11-05T08:00:00Z");
+        BOOST_TEST(renewal.instances[0].cpuLimit == 1.5, boost::test_tools::tolerance(0.001));
+        BOOST_TEST(renewal.instances[0].nameSpace == "production");
+        BOOST_TEST(renewal.instances[0].environment.at("EUCLID_LOG_LEVEL") == "info");
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("loadAverage").as_double() == 1.5, boost::test_tools::tolerance(0.001));
+        BOOST_TEST(body.at("memoryTotalMb").as_int64() == 16384);
+    }
+
+    // A worker that measured nothing sends nothing: the server reads an absent figure as a worker
+    // older than the field, which is what zero would mean anyway.
+    BOOST_AUTO_TEST_CASE(AHeartbeatWithNoReadingsSendsNoMemory) {
+        const EapClient client(Test::Answering(R"({"node": "worker-1", "leaseSeconds": 60, "instances": []})"));
+
+        std::ignore = client.eap.RenewNode("worker-1");
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(!body.as_object().contains("memoryTotalMb"));
+        BOOST_TEST(!body.as_object().contains("memoryUsedMb"));
+        BOOST_TEST(body.at("loadAverage").as_double() == 0.0, boost::test_tools::tolerance(0.001));
+    }
+
+    // Absent means drain, because that is what the action is called - so putting a node back has
+    // to say so, and the field travels either way.
+    BOOST_AUTO_TEST_CASE(DrainingAndUndrainingBothSayWhichTheyMean) {
+        const EapClient client(Test::Answering(R"({"node": "worker-1", "drained": true})"));
+
+        BOOST_TEST(client.eap.DrainNode("worker-1").drained);
+        BOOST_TEST(lastBody(client.gateway).at("drained").as_bool() == true);
+
+        std::ignore = client.eap.DrainNode("worker-1", false);
+        BOOST_TEST(lastBody(client.gateway).at("drained").as_bool() == false);
+    }
+
+    // Empty is what takes a slot back to the manager's own host - a legitimate thing to ask for,
+    // and not the same as not saying - so the node travels even when empty.
+    BOOST_AUTO_TEST_CASE(AssigningASlotSendsTheNodeEvenWhenEmpty) {
+        const EapClient client(Test::Answering(R"({"runtimeName": "order-service-a1b2", "instanceId": "i-1",
+                                                   "node": "", "leaseExpiresAt": "2026-11-06T08:15:00Z"})"));
+
+        const auto assigned = client.eap.AssignInstance("order-service-a1b2", "i-1");
+
+        BOOST_TEST(assigned.instanceId == "i-1");
+        BOOST_TEST(assigned.node.empty());
+        BOOST_REQUIRE(lastBody(client.gateway).as_object().contains("node"));
+        BOOST_TEST(lastBody(client.gateway).at("node").as_string() == "");
+    }
+
+    BOOST_AUTO_TEST_CASE(ReportsAnInstanceAndLeavesTheStateToTheServerWhenUnset) {
+        const EapClient client(Test::Answering("{}"));
+
+        client.eap.ReportNodeInstance("order-service-a1b2", "i-1", {.httpPort = 34001, .pid = 4711});
+
+        const auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("httpPort").as_int64() == 34001);
+        // An absent state reads as RUNNING; an empty string would parse as no state at all.
+        BOOST_TEST(!body.as_object().contains("state"));
+
+        client.eap.ReportNodeInstance("order-service-a1b2", "i-1", {.state = "STOPPED"});
+        BOOST_TEST(lastBody(client.gateway).at("state").as_string() == "STOPPED");
+    }
+
+    // A credentials bundle whose shape belongs to whatever consumes it, so it is answered unparsed.
+    BOOST_AUTO_TEST_CASE(IssuesInstanceCredentialsUnparsed) {
+        const EapClient client(Test::Answering(R"({"accessKeyId": "AKIA", "secretAccessKey": "s3cret",
+                                                   "token": "jwt"})"));
+
+        const auto credentials = client.eap.IssueInstanceCredentials("order-service-a1b2", "i-1");
+        BOOST_TEST(credentials.at("accessKeyId").as_string() == "AKIA");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "issue-instance-credentials");
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EapLoggingTest)
 
     BOOST_AUTO_TEST_CASE(SetsWhatOneApplicationLogsAt) {

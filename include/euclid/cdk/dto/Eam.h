@@ -179,6 +179,26 @@ namespace Euclid::CDK::EAM {
     };
 
     /**
+     * @brief The accounts a session may work in, and which one is its own.
+     *
+     * @par
+     * "homeAccountId" is the account the user belongs to; the list is that one plus every account
+     * they hold a grant in, de-duplicated and ordered - a user with several grants in one account
+     * sees it once, and the order does not depend on which grant was written first. For an
+     * administrator it is every account in the installation.
+     *
+     * @par
+     * An account the user can reach but which has no record of its own is listed named after its
+     * own ID rather than blank, because a row with nothing in it is worse than one showing the id a
+     * client is about to send.
+     */
+    struct EUCLID_CDK_API MyAccounts {
+        std::string homeAccountId;
+        std::vector<Account> accounts;
+        long total{};
+    };
+
+    /**
      * @brief A newly created access key. This is the only time the secret is ever returned.
      */
     struct EUCLID_CDK_API CreateAccessKeyResult {
@@ -235,6 +255,12 @@ namespace Euclid::CDK::EAM {
      */
     [[nodiscard]]
     EUCLID_CDK_API Namespace ToNamespace(const boost::json::value &value);
+
+    /**
+     * @brief Reads a list-my-accounts response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API MyAccounts ToMyAccounts(const boost::json::value &value);
 
     /**
      * @brief Reads a login response.
