@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  The Windows installer for the SDK, built by release.yml with the WiX toolset.
+
+  What it installs is what the archive holds - headers, both libraries and the CMake package config -
+  so the MSI is a managed way to put the same tree somewhere predictable rather than a different
+  product. "Program Files\euclid-cdk" rather than beside the system libraries: this is an SDK a build
+  points at, not a runtime anything loads by itself.
+
+  The harvesting is left to WiX's own Files element rather than written out file by file. A list of
+  fifty headers kept by hand is a list that goes stale the first time a module is added, and it would
+  go stale silently - the MSI would build and simply not contain the new header.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+    <!--
+      Version and Stage come from the command line (-d), because both are facts about the run rather
+      than about the product: the version is whatever version.txt says, and the stage is wherever the
+      job installed the tree.
+    -->
+    <?ifndef Version ?>
+    <?error Version must be passed with -d Version=<version> ?>
+    <?endif?>
+    <?ifndef Stage ?>
+    <?error Stage must be passed with -d Stage=<path to the staged install tree> ?>
+    <?endif?>
+
+    <Package Name="euclid-cdk"
+             Manufacturer="Jens Vogt"
+             Version="$(Version)"
+             Scope="perMachine"
+             Compressed="yes"
+             UpgradeCode="DCE73D1D-69B0-4C21-A6D5-93383C0B59C1">
+
+        <!--
+          Fixed for the life of the product: the UpgradeCode is how Windows knows one version of
+          euclid-cdk is the same product as another, and changing it would leave two of them
+          installed side by side with no way to tell them apart.
+        -->
+        <MajorUpgrade DowngradeErrorMessage="A newer version of euclid-cdk is already installed. Remove it first."/>
+
+        <!-- One embedded cabinet, so the MSI is the whole installer and not a file beside others. -->
+        <MediaTemplate EmbedCab="yes"/>
+
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="euclid-cdk"/>
+        </StandardDirectory>
+
+        <Feature Id="Sdk" Title="euclid-cdk SDK" Level="1">
+            <ComponentGroupRef Id="SdkFiles"/>
+            <ComponentGroupRef Id="SdkEnvironment"/>
+        </Feature>
+
+        <ComponentGroup Id="SdkFiles" Directory="INSTALLFOLDER">
+            <Files Include="$(Stage)\**"/>
+        </ComponentGroup>
+
+        <!--
+          What makes the MSI worth more than unzipping the archive: a consumer's CMake finds the SDK
+          without being told where it is, because the install root is on CMAKE_PREFIX_PATH.
+          Appended rather than set, so it joins whatever else is already there, and removed with the
+          product rather than left behind pointing at nothing.
+        -->
+        <ComponentGroup Id="SdkEnvironment" Directory="INSTALLFOLDER">
+            <Component Id="CmakePrefixPath" Guid="*">
+                <Environment Id="EuclidCdkCmakePrefixPath"
+                             Name="CMAKE_PREFIX_PATH"
+                             Value="[INSTALLFOLDER]"
+                             Part="last"
+                             Action="set"
+                             Permanent="no"
+                             System="yes"/>
+                <!--
+                  A component needs something of its own to be installed and removed by, and an
+                  environment variable is not it - this registry value is what gives the component a
+                  key path, so Windows can tell whether it is present.
+                -->
+                <RegistryValue Root="HKLM"
+                               Key="Software\euclid\euclid-cdk"
+                               Name="InstallFolder"
+                               Type="string"
+                               Value="[INSTALLFOLDER]"
+                               KeyPath="yes"/>
+            </Component>
+        </ComponentGroup>
+    </Package>
+</Wix>

@@ -1,5 +1,8 @@
 # Build trees
 build/
+# Package roots and staging the release workflow writes beside the source
+pkgroot/
+stage/
 build-*/
 cmake-build-*/
 out/
