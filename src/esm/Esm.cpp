@@ -347,6 +347,19 @@ namespace Euclid::CDK::ESM {
         return ToPage<Object>(Call("list-objects", payload), "objects", ToObject);
     }
 
+    ObjectListing Esm::ListObjectsByDelimiter(const std::string &bucketErn, const std::string &delimiter,
+                                              const ListOptions &options, const bool includeDirectories) const {
+
+        auto payload = ListPayload(options, "name");
+        payload["bucketErn"] = bucketErn;
+        payload["includeDirectories"] = includeDirectories;
+        // The one field that makes this a different listing: without it the server walks every key
+        // under the prefix and there is nothing to collapse into prefixes.
+        payload["delimiter"] = delimiter;
+
+        return ToObjectListing(Call("list-objects", payload));
+    }
+
     long Esm::GetObjectCount(const std::string &bucketErn) const {
         return NumberOf("get-object-count", {{"ern", bucketErn}}, "count");
     }

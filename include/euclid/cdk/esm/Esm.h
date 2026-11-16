@@ -689,6 +689,30 @@ namespace Euclid::CDK::ESM {
         Page<Object> ListObjects(const std::string &bucketErn, const ListOptions &options = {}, bool includeDirectories = false) const;
 
         /**
+         * @brief One level of a bucket, the way a file browser shows a folder.
+         *
+         * @par
+         * ListObjects() walks every key under a prefix, however deep. This stops at the delimiter:
+         * the objects directly at this level come back as objects, and everything below them is
+         * collapsed into ObjectListing::commonPrefixes - one entry per path, however many keys lie
+         * under it. On a bucket of a million keys under "2026/", that is the difference between a
+         * listing of twelve months and a listing of a million objects.
+         *
+         * @par
+         * A directory is not a thing here: a bucket is flat, so the prefixes are derived from the
+         * keys and exist whether or not a marker was ever written for one. Descending means listing
+         * again with the prefix set to one of them.
+         *
+         * @param bucketErn         the bucket.
+         * @param delimiter         what separates one level from the next, almost always "/".
+         * @param options           prefix, page and ordering, applied to the objects.
+         * @param includeDirectories whether the zero-byte markers are listed as objects too.
+         */
+        [[nodiscard]]
+        ObjectListing ListObjectsByDelimiter(const std::string &bucketErn, const std::string &delimiter = "/",
+                                             const ListOptions &options = {}, bool includeDirectories = false) const;
+
+        /**
          * @brief The bucket's stored object count, without counting.
          *
          * @par

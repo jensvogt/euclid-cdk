@@ -2,6 +2,8 @@
 
 // Euclid includes
 #include <euclid/cdk/dto/Esm.h>
+// For LifecycleStandard: an object that says nothing about its lifecycle is online.
+#include <euclid/cdk/esm/Esm.h>
 
 namespace Euclid::CDK::ESM {
 
@@ -18,6 +20,8 @@ namespace Euclid::CDK::ESM {
                 .internal = Json::Flag(value, "internal"),
                 .priority = Json::Text(value, "priority"),
                 .versioning = Json::Flag(value, "versioning"),
+                .maxVersions = Json::Number(value, "maxVersions"),
+                .directories = Json::Number(value, "directories"),
                 .stopped = Json::Flag(value, "stopped"),
                 .created = Json::Text(value, "created"),
                 .modified = Json::Text(value, "modified"),
@@ -143,6 +147,15 @@ namespace Euclid::CDK::ESM {
         return result;
     }
 
+    ObjectListing ToObjectListing(const boost::json::value &value) {
+
+        ObjectListing listing{
+                .objects = ToPage<Object>(value, "objects", ToObject),
+                .commonPrefixes = Json::Strings(value, "commonPrefixes"),
+        };
+        return listing;
+    }
+
     Object ToObject(const boost::json::value &value) {
         return {
                 .ern = Json::Text(value, "ern"),
@@ -156,6 +169,15 @@ namespace Euclid::CDK::ESM {
                 .attributes = COM::ToVariantMap(value, "attributes"),
                 .created = Json::Text(value, "created"),
                 .modified = Json::Text(value, "modified"),
+                .versionId = Json::Text(value, "versionId"),
+                .lastAccessed = Json::Text(value, "lastAccessed"),
+                // Defaulted to STANDARD, as the server's own model does: an object that says
+                // nothing about its lifecycle is online, and reading an absent field as archived
+                // would report a whole bucket as unreachable.
+                .lifecycleState = Json::Text(value, "lifecycleState").empty()
+                                          ? std::string(LifecycleStandard)
+                                          : Json::Text(value, "lifecycleState"),
+                .restoredUntil = Json::Text(value, "restoredUntil"),
         };
     }
 
@@ -292,6 +314,7 @@ namespace Euclid::CDK::ESM {
                 .status = Json::Text(value, "status"),
                 .contentType = Json::Text(value, "contentType"),
                 .md5Sum = Json::Text(value, "md5Sum"),
+                .unchanged = Json::Flag(value, "unchanged"),
         };
     }
 
