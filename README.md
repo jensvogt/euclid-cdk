@@ -70,16 +70,23 @@ Every release is published to a signed APT repository, so updates arrive with an
 `apt upgrade` rather than a download:
 
 ```bash
-curl -fsSL https://jensvogt.github.io/euclid-cdk/euclid-cdk.gpg.asc \
-  | sudo gpg --dearmor -o /usr/share/keyrings/euclid-cdk.gpg
+curl -fsSL https://jensvogt.github.io/euclid-cdk/euclid-cdk.gpg.asc -o /tmp/euclid-cdk.asc
+sudo gpg --dearmor --yes -o /usr/share/keyrings/euclid-cdk.gpg /tmp/euclid-cdk.asc
+
 echo "deb [signed-by=/usr/share/keyrings/euclid-cdk.gpg] https://jensvogt.github.io/euclid-cdk/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/euclid-cdk.list
 sudo apt update
 sudo apt install euclid-cdk
 ```
 
+The download and the key import are two commands rather than a pipeline, and deliberately so: in
+`curl … | sudo gpg --dearmor -o <file>` it is *gpg* that creates the file, so a download that fails
+still leaves a keyring behind — an empty one. `apt update` then reports `NO_PUBKEY` and the fault
+looks like the repository rather than the key that never arrived. Downloading first means a failure
+stops before anything is written.
+
 The repository keeps every release, so a particular one can be asked for by name —
-`sudo apt install euclid-cdk=0.15.0`.
+`sudo apt install euclid-cdk=0.16.0`.
 
 #### With yum or dnf, on RHEL and Fedora
 

@@ -770,7 +770,8 @@ jobs:
             printf '<title>euclid-cdk packages</title>\n'
             printf '<h1>euclid-cdk</h1>\n'
             printf '<p>Signed package repositories for the C++ SDK for a euclid server.</p>\n'
-            printf '<pre>curl -fsSL %s/euclid-cdk.gpg.asc | sudo gpg --dearmor -o /usr/share/keyrings/euclid-cdk.gpg\n' "$base"
+            printf '<pre>curl -fsSL %s/euclid-cdk.gpg.asc -o /tmp/euclid-cdk.asc\n' "$base"
+            printf 'sudo gpg --dearmor --yes -o /usr/share/keyrings/euclid-cdk.gpg /tmp/euclid-cdk.asc\n'
             printf 'echo "deb [signed-by=/usr/share/keyrings/euclid-cdk.gpg] %s/apt %s %s" | sudo tee /etc/apt/sources.list.d/euclid-cdk.list\n' "$base" "${APT_DIST}" "${APT_COMPONENT}"
             printf 'sudo apt update &amp;&amp; sudo apt install euclid-cdk</pre>\n'
             printf '<pre>sudo curl -fsSL %s/euclid-cdk.repo -o /etc/yum.repos.d/euclid-cdk.repo\n' "$base"
