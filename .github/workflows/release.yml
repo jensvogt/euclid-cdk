@@ -1,10 +1,16 @@
 name: release
 
 # Pushing a v* tag builds the libraries for every platform this SDK claims to support and attaches
-# them to the release for that tag. The manual trigger builds the same archives from whatever main
-# says without touching a release, which is how this workflow is tried out - and what the first
-# release after it lands needs, since a workflow only runs for a tag if it already existed at that
-# tag's commit.
+# them to the release for that tag - as plain archives, and as an installer per platform: a DEB and
+# an RPM, a Windows MSI built with WiX, and a macOS pkg. The manual trigger builds the same things
+# from whatever main says without touching a release, which is how this workflow is tried out - and
+# what the first release after it lands needs, since a workflow only runs for a tag if it already
+# existed at that tag's commit.
+#
+# The installers are signed in the deploy job and nowhere else. They are built on three runners, and
+# a signing key handed to all three would be exposed three times over for nothing: the packages come
+# back as artifacts and are signed once, on one machine, with the key euclid-rui signs its APT
+# repository with.
 #
 # It also runs on main, where it attaches nothing: that run exists to fill the dependency cache. A
 # cache written while building a tag is scoped to that tag and invisible to the next one, so every
@@ -137,6 +143,190 @@ jobs:
             cmake -E tar czf "../${EUCLID_CDK_ARCHIVE}.tar.gz" "${EUCLID_CDK_ARCHIVE}"
           fi
 
+      # -------------------------------------------------------------------------
+      # Installers. The same tree the archive holds, laid out the way each
+      # platform expects it to arrive: under /usr for a distribution package,
+      # /usr/local for a macOS pkg, Program Files for an MSI.
+      #
+      # Built on every run and not only for a tag, for the reason staging is: a
+      # packaging step that stopped working is better found on the commit that
+      # broke it than on the tag that wanted to ship it.
+      # -------------------------------------------------------------------------
+
+      - name: Stage the package root
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A second install rather than a copy of the archive's stage, because each platform
+          # wants the tree under a different prefix and CMake is what relocates it - the installed
+          # package config resolves its paths relative to itself, so an install is the one way to
+          # move it that keeps find_package() working.
+          case "${{ runner.os }}" in
+            Linux)   prefix="pkgroot/usr" ;;
+            macOS)   prefix="pkgroot/usr/local" ;;
+            Windows) prefix="pkgroot" ;;
+          esac
+          cmake --install build --config Release --prefix "$prefix"
+
+          # The licence and the README belong under share/doc on a Unix prefix, not at its root: a
+          # package dropping files straight into /usr is one no distribution would take, and
+          # /usr/LICENSE would be a file from this project sitting where nothing looks for one. An
+          # MSI's install folder is a directory of its own, so there they stay where they land.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp LICENSE README.md "$prefix/"
+          else
+            install -d "$prefix/share/doc/euclid-cdk"
+            cp LICENSE README.md "$prefix/share/doc/euclid-cdk/"
+          fi
+          echo "EUCLID_CDK_VERSION=$(cat version.txt)" >> "$GITHUB_ENV"
+
+      - name: Install fpm
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev build-essential rpm
+          sudo gem install --no-document fpm
+
+      # One package carrying the libraries and the headers together, rather than the runtime/-dev
+      # split a distribution would make. What is shipped here is an SDK: nothing on a euclid machine
+      # loads libeuclid-cdk.so without having been built against these headers first, so a runtime
+      # package on its own would have no user.
+      #
+      # Boost and OpenSSL are named as dependencies of neither package, deliberately: the release
+      # build takes both from vcpkg, whose Linux triplet is static, so they are inside the library
+      # rather than beside it. The step prints what the library actually asks the loader for, so
+      # that a declared dependency list which has drifted from the truth is visible in the log
+      # rather than discovered on an install.
+      - name: Build the DEB and RPM
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          common=(
+            -s dir
+            -C pkgroot
+            --name euclid-cdk
+            --version "${EUCLID_CDK_VERSION}"
+            --license Apache-2.0
+            --vendor "Jens Vogt"
+            --maintainer "Jens Vogt <jensvogt47@gmail.com>"
+            --url "https://github.com/jensvogt/euclid-cdk"
+            --description "C++ SDK for a euclid server: headers, shared and static libraries, and the CMake package config."
+            usr
+          )
+          # The architecture is named per target: the same machine is "amd64" to dpkg and
+          # "x86_64" to rpm, and a package labelled with the other one installs nowhere. fpm
+          # translates between them for some targets and not others, so neither is left to it.
+          fpm -t deb --architecture amd64 --depends libstdc++6 \
+              --package "euclid-cdk-${EUCLID_CDK_VERSION}-amd64.deb" "${common[@]}"
+          fpm -t rpm --architecture x86_64 --depends libstdc++ \
+              --package "euclid-cdk-${EUCLID_CDK_VERSION}-x86_64.rpm" "${common[@]}"
+
+          # Read back rather than trusted: fpm answers 0 for a package it wrote with nothing in
+          # it, and an empty package is the failure that looks like success all the way to
+          # somebody installing it.
+          deb="euclid-cdk-${EUCLID_CDK_VERSION}-amd64.deb"
+          rpmfile="euclid-cdk-${EUCLID_CDK_VERSION}-x86_64.rpm"
+          dpkg --contents "$deb" | grep -q "usr/include/euclid/cdk/Euclid.h"
+          dpkg --contents "$deb" | grep -q "usr/lib/cmake/euclid-cdk/"
+          rpm -qlp "$rpmfile" | grep -q "usr/include/euclid/cdk/Euclid.h"
+
+          echo "shared libraries libeuclid-cdk.so asks for:"
+          needed="$(objdump -p pkgroot/usr/lib/libeuclid-cdk.so | awk '/NEEDED/ {print $2}')"
+          echo "${needed}" | sed 's/^/  /'
+
+          # Refused rather than printed and shipped. The packages name no Boost or OpenSSL
+          # dependency because the release build has them statically; if that ever stops being
+          # true the package is broken for everybody who installs it, and the only symptom is a
+          # loader error on first use. Cheaper to stop here and make somebody decide.
+          if echo "${needed}" | grep -qE 'libboost|libssl|libcrypto'; then
+            echo "The library links Boost or OpenSSL dynamically, which these packages do not" >&2
+            echo "declare. Either build them statically or add the dependencies to fpm above." >&2
+            exit 1
+          fi
+
+      # A component package, installed at "/" over a root that already says usr/local - so the pkg
+      # puts the SDK exactly where a macOS build looks for it without an install-location to argue
+      # with.
+      #
+      # Not signed for Gatekeeper: productsign needs an Apple Developer ID certificate, which this
+      # project has none of. The detached GPG signature the deploy job writes is what a caller can
+      # actually check; macOS will still ask before opening it.
+      - name: Build the macOS pkg
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkgbuild --root pkgroot \
+                   --identifier de.jensvogt.euclid-cdk \
+                   --version "${EUCLID_CDK_VERSION}" \
+                   --install-location / \
+                   "euclid-cdk-${EUCLID_CDK_VERSION}-macos-arm64.pkg"
+
+      # Pinned, because the latest is WiX 7 and the .wxs here is written against the v4 schema
+      # that 4 and 5 share. Into a path of its own rather than --global, so calling it does not
+      # depend on whether the runner happens to have the dotnet tools directory on PATH.
+      - name: Install the WiX toolset
+        if: runner.os == 'Windows'
+        run: dotnet tool install wix --version 5.0.2 --tool-path "${{ runner.temp }}\wix"
+
+      # Not signed with Authenticode, for the same reason the pkg is not signed for Gatekeeper:
+      # that needs a code-signing certificate this project does not have. SmartScreen will warn.
+      - name: Build the MSI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stage = Join-Path $PWD 'pkgroot'
+          & "$env:RUNNER_TEMP\wix\wix.exe" build `
+            -arch x64 `
+            -d "Version=$env:EUCLID_CDK_VERSION" `
+            -d "Stage=$stage" `
+            -o "euclid-cdk-$env:EUCLID_CDK_VERSION-windows-x64.msi" `
+            dist/windows/euclid-cdk.wxs
+
+      # Unpacked and read back, for the same reason the DEB and RPM are. WiX's Files element
+      # harvests the tree with a ** glob, and its documentation does not actually say whether the
+      # subdirectory structure survives into the package - so an MSI that flattened every header
+      # into one folder would build, install, and only fail at the first #include. An
+      # administrative install extracts without installing anything, and needs no elevation.
+      - name: Check the MSI lays the tree out correctly
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = "euclid-cdk-$env:EUCLID_CDK_VERSION-windows-x64.msi"
+          $extract = Join-Path $env:RUNNER_TEMP 'msi-extract'
+          $log = Join-Path $env:RUNNER_TEMP 'msi-extract.log'
+
+          $p = Start-Process msiexec -Wait -PassThru -ArgumentList @(
+            '/a', (Resolve-Path $msi).Path, '/qn', "TARGETDIR=$extract", '/l*v', $log)
+          if ($p.ExitCode -ne 0) {
+            Get-Content $log -Tail 40
+            throw "the administrative install failed with $($p.ExitCode)"
+          }
+
+          # The two paths that say the structure survived: a header several directories deep, and
+          # the package config a consumer's find_package() has to land on.
+          $wanted = @(
+            'euclid-cdk\include\euclid\cdk\Euclid.h',
+            'euclid-cdk\include\euclid\cdk\dto\Esm.h',
+            'euclid-cdk\lib\cmake\euclid-cdk\euclid-cdk-config.cmake'
+          )
+          $missing = @()
+          foreach ($w in $wanted) {
+            if (-not (Get-ChildItem -Path $extract -Recurse -Filter (Split-Path $w -Leaf) -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -like "*$w" })) { $missing += $w }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "The MSI does not lay the tree out as expected. Missing:"
+            $missing | ForEach-Object { Write-Host "  $_" }
+            Write-Host "What it actually contains:"
+            Get-ChildItem -Path $extract -Recurse -File |
+              ForEach-Object { Write-Host "  $($_.FullName.Substring($extract.Length))" }
+            throw 'MSI layout check failed'
+          }
+          Write-Host "MSI layout verified: headers and the CMake package config keep their paths."
+
       # Only for a tag, since only a tag has a release to attach them to. A main run has already
       # done its job by this point - the cache is written whether or not the archive is kept - and
       # staging and archiving are still worth doing there, because an install tree that stopped
@@ -149,6 +339,18 @@ jobs:
           path: |
             euclid-cdk-*.tar.gz
             euclid-cdk-*.zip
+          if-no-files-found: error
+
+      - name: Upload the installers
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.name }}
+          path: |
+            euclid-cdk-*.deb
+            euclid-cdk-*.rpm
+            euclid-cdk-*.pkg
+            euclid-cdk-*.msi
           if-no-files-found: error
 
   release:
@@ -178,3 +380,150 @@ jobs:
                 --generate-notes
           fi
           gh release upload "${GITHUB_REF_NAME}" archives/* --clobber
+
+  # ---------------------------------------------------------------------------
+  # Signs the installers and attaches them. A job of its own, and the only one
+  # the signing key is given to: the archives are built on three runners, and a
+  # key that travelled to all of them would be exposed three times over for no
+  # gain. The installers come back as artifacts, get signed here, and go up.
+  #
+  # The key is the one euclid-rui signs its APT repository with, so anybody who
+  # already trusts euclid-rui's key trusts these too - the same three secrets,
+  # which have to be readable from this repository as well (organisation
+  # secrets, or copied into it).
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Sign and attach the installers
+    runs-on: ubuntu-latest
+    # After release, not beside it: that job is what creates the release when a
+    # tag has none, and uploading to one that does not exist yet fails.
+    needs: [ package, release ]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      # Everything, not only the installers: the archives are on the release too, and a checksum
+      # file that covered half of what is published would be worse than none - somebody checking a
+      # tarball against it would find it missing and have no way to tell that from a tampered file.
+      # The archives are attached by the release job; this only vouches for them.
+      - name: Download every artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # The rpm package is what carries "rpm --addsign"; nothing here builds an RPM.
+      - name: Install rpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+      # Refused rather than silently unsigned: a release whose signatures are missing because a
+      # secret was not set is worse than one that failed, because nothing afterwards says so.
+      - name: Check the signing key is available
+        env:
+          KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEY}" ] || [ -z "${KEY_ID}" ]; then
+            echo "APT_GPG_PRIVATE_KEY and APT_GPG_KEY_ID must be set for this repository -" >&2
+            echo "they are the key euclid-rui signs with. Nothing was signed or attached." >&2
+            exit 1
+          fi
+
+      # Through stdin rather than as an argument, here and for the passphrase below: an argument
+      # is readable in "ps" by anything else running on the runner, and a private key is the one
+      # value in this workflow that would be worth reading.
+      - name: Import the signing key
+        env:
+          KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: printf '%s' "${KEY}" | gpg --batch --import
+
+      # Inside the package rather than beside it, because that is the only signature "rpm -K" and
+      # dnf can check on their own. The DEB gets no in-package signature: dpkg checks none on a
+      # plain install, and an APT repository - which is where a signed index would matter - is
+      # euclid-rui's job rather than this one's.
+      - name: Sign the RPM
+        env:
+          KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+          PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+
+          # In a file with no permissions for anybody else, rather than in the sign command: a
+          # passphrase in the command line is readable in "ps" by every other process on the
+          # runner for as long as rpm runs.
+          pass_file="$(mktemp)"
+          chmod 600 "$pass_file"
+          printf '%s' "${PASSPHRASE}" > "$pass_file"
+          trap 'rm -f "$pass_file"' EXIT
+
+          for rpmfile in artifacts/*.rpm; do
+            [ -e "$rpmfile" ] || continue
+
+            # "%{__gpg} gpg" is not a typo and not a doubled word: rpm takes the first token as the
+            # program to run and the rest as its arguments, so the second one is argv[0]. The
+            # default macro reads the same way.
+            rpm --define "_gpg_name ${KEY_ID}" \
+                --define "__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase-file ${pass_file} --no-armor --no-secmem-warning --detach-sign -u %{_gpg_name} -o %{__signature_filename} %{__plaintext_filename}" \
+                --addsign "$rpmfile"
+
+            # Asked for the signature itself rather than grepped out of "rpm -qpi", which prints a
+            # Signature line for an unsigned package too - saying "(none)". A check that passes
+            # either way is not a check.
+            signature="$(rpm -qp --queryformat '%{SIGPGP:pgpsig}' "$rpmfile")"
+            case "${signature}" in
+              ''|'(none)')
+                echo "$rpmfile came back unsigned" >&2
+                exit 1
+                ;;
+            esac
+            echo "$rpmfile signed: ${signature}"
+          done
+
+      # One signature over the checksums rather than one per file: a caller checks the list and
+      # then the file they actually took, which is two commands whatever they downloaded - and the
+      # list is what says a file is missing as well as that it is wrong.
+      - name: Write and sign the checksums
+        working-directory: artifacts
+        env:
+          KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+          PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+
+          # Everything published under the release's own name: the four installers and the three
+          # archives. "euclid-cdk.gpg.asc" is not matched by the glob and would be pointless in
+          # the list anyway - a checksum of the key, signed by the key, says nothing.
+          sha256sum euclid-cdk-* > SHA256SUMS
+
+          printf '%s' "${PASSPHRASE}" | gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-fd 0 \
+              --default-key "${KEY_ID}" \
+              --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
+
+          # The public half, so verifying needs nothing but the release page. The same key
+          # euclid-rui publishes, under this project's name.
+          gpg --export --armor "${KEY_ID}" > euclid-cdk.gpg.asc
+
+          # Checked here rather than left to whoever downloads it: a signature written with the
+          # wrong key, or over a file that changed afterwards, is something this job can catch and
+          # nobody else will until it matters.
+          gpg --batch --yes --verify SHA256SUMS.asc SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attach the installers to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release upload "${GITHUB_REF_NAME}" \
+             artifacts/euclid-cdk-*.deb \
+             artifacts/euclid-cdk-*.rpm \
+             artifacts/euclid-cdk-*.pkg \
+             artifacts/euclid-cdk-*.msi \
+             artifacts/SHA256SUMS \
+             artifacts/SHA256SUMS.asc \
+             artifacts/euclid-cdk.gpg.asc \
+             --clobber

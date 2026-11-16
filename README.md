@@ -42,6 +42,43 @@ esm.UploadFile(bucket.ern, "2026/q3.pdf", "q3.pdf");
 nothing after the first time — and that file is shared with euclid-cli and the other SDKs, so a login
 from any of them is picked up here. `UseCache(false)` forces a fresh login.
 
+### Installing it
+
+Every release carries plain archives and an installer per platform:
+
+| file | installs to |
+|---|---|
+| `euclid-cdk-<version>-amd64.deb` | `/usr` |
+| `euclid-cdk-<version>-x86_64.rpm` | `/usr` |
+| `euclid-cdk-<version>-macos-arm64.pkg` | `/usr/local` |
+| `euclid-cdk-<version>-windows-x64.msi` | `C:\Program Files\euclid-cdk` |
+
+Each one carries the headers, both libraries, the CMake package config, the licence and the README —
+the same tree the archives hold, laid out where each platform looks for it. The MSI also appends its
+install folder to the system `CMAKE_PREFIX_PATH`, so `find_package(euclid-cdk)` finds it without
+being told where it is; the DEB, RPM and pkg install under a prefix CMake already searches.
+
+Boost and OpenSSL are not dependencies of any of them: the release build links both statically, so
+they are inside the library rather than beside it.
+
+**Verifying a download.** The release carries `SHA256SUMS`, a detached signature for it, and the
+public key — the same key [euclid-rui](https://github.com/jensvogt/euclid-rui) signs its APT
+repository with, so one trusted key covers both:
+
+```bash
+gpg --import euclid-cdk.gpg.asc
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+The RPM additionally carries an in-package signature, which `rpm -K` checks once that key is in the
+RPM keyring.
+
+Two things the signatures do **not** do. The MSI is not signed with Authenticode and the pkg is not
+signed for Gatekeeper — both need a certificate from the respective vendor, which this project does
+not have — so Windows SmartScreen and macOS will each warn before installing. The GPG signature is
+what actually establishes where a file came from, and it has to be checked by hand.
+
 ### Building against it
 
 ```cmake
