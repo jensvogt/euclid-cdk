@@ -941,6 +941,92 @@ BOOST_AUTO_TEST_SUITE(EsmAuthenticationTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EsmListingDetailTest)
+
+    // The fields a listing carries about an object's lifecycle. Without them a caller can list a
+    // bucket and not tell which objects a rule has already archived - every one looks alike.
+    BOOST_AUTO_TEST_CASE(AnObjectSaysWhereItStandsInItsLifecycle) {
+        const EsmClient client(Test::Answering(R"({"total": 1, "objects": [
+                {"ern": "ern:object/reports/q3.pdf", "key": "q3.pdf", "size": 2048,
+                 "versionId": "v3", "lastAccessed": "2026-11-01T08:00:00Z",
+                 "lifecycleState": "ARCHIVED", "restoredUntil": ""}]})"));
+
+        const auto page = client.esm.ListObjects(kBucket);
+
+        BOOST_REQUIRE(page.items.size() == 1U);
+        BOOST_TEST(page.items[0].versionId == "v3");
+        BOOST_TEST(page.items[0].lastAccessed == "2026-11-01T08:00:00Z");
+        BOOST_TEST(page.items[0].lifecycleState == std::string(ESM::LifecycleArchived));
+        BOOST_TEST(page.items[0].restoredUntil.empty());
+    }
+
+    // The server leaves the field out when an object is online, so a reader defaulting it to empty
+    // would make every ordinary object unclassifiable.
+    BOOST_AUTO_TEST_CASE(AnObjectThatSaysNothingAboutItsLifecycleIsOnline) {
+        const EsmClient client(Test::Answering(R"({"total": 1, "objects": [{"key": "q3.pdf"}]})"));
+
+        BOOST_TEST(client.esm.ListObjects(kBucket).items[0].lifecycleState == std::string(ESM::LifecycleStandard));
+    }
+
+    BOOST_AUTO_TEST_CASE(ABucketCountsItsMarkersApartFromItsObjects) {
+        const EsmClient client(Test::Answering(R"({"bucket": {"name": "reports", "objects": 12,
+                                                              "directories": 3, "maxVersions": 5}})"));
+
+        const auto bucket = client.esm.GetBucket("reports");
+        BOOST_TEST(bucket.objects == 12L);
+        // Markers are not objects a client stored, so adding the two would overstate the bucket.
+        BOOST_TEST(bucket.directories == 3L);
+        BOOST_TEST(bucket.maxVersions == 5L);
+    }
+
+    // One level rather than every key beneath it: what a file browser shows for a folder.
+    BOOST_AUTO_TEST_CASE(ListsOneLevelAndCollapsesTheRest) {
+        const EsmClient client(Test::Answering(R"({"total": 1,
+                "objects": [{"key": "2026/index.json", "size": 12}],
+                "commonPrefixes": ["2026/q1/", "2026/q2/"]})"));
+
+        const auto listing = client.esm.ListObjectsByDelimiter(kBucket, "/", {.prefix = "2026/"});
+
+        BOOST_REQUIRE(listing.objects.items.size() == 1U);
+        BOOST_TEST(listing.objects.items[0].key == "2026/index.json");
+        BOOST_REQUIRE(listing.commonPrefixes.size() == 2U);
+        BOOST_TEST(listing.commonPrefixes[0] == "2026/q1/");
+
+        const auto body = lastBody(client.gateway);
+        // The field that makes it this listing rather than the other one.
+        BOOST_TEST(body.at("delimiter").as_string() == "/");
+        BOOST_TEST(body.at("prefix").as_string() == "2026/");
+    }
+
+    // A plain listing asks for no delimiter, or the server would collapse what it was meant to walk.
+    BOOST_AUTO_TEST_CASE(APlainListingSendsNoDelimiter) {
+        const EsmClient client(Test::Answering(R"({"total": 0, "objects": []})"));
+
+        std::ignore = client.esm.ListObjects(kBucket);
+        BOOST_TEST(!lastBody(client.gateway).as_object().contains("delimiter"));
+    }
+
+    // True only where versioning is on and the bytes were already there: the upload stored nothing
+    // and the answer describes what was found, which is a success rather than a no-op to report.
+    BOOST_AUTO_TEST_CASE(AnUploadOfIdenticalBytesSaysItStoredNothing) {
+        // PutObject is the shortest public path to a StoredObject; what is being checked is that
+        // the field survives the reader, not which call produced it.
+        const EsmClient client(Test::Answering(R"({"ern": "ern:object/reports/q3.pdf", "key": "q3.pdf",
+                                                   "size": 2048, "unchanged": true})"));
+
+        const auto stored = client.esm.PutObject(kBucket, "q3.pdf", "the same bytes as before");
+        BOOST_TEST(stored.unchanged);
+        BOOST_TEST(stored.size == 2048L);
+    }
+
+    BOOST_AUTO_TEST_CASE(AnOrdinaryUploadDoesNotClaimToHaveStoredNothing) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:object/reports/q3.pdf", "size": 2048})"));
+
+        BOOST_TEST(!client.esm.PutObject(kBucket, "q3.pdf", "new bytes").unchanged);
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EsmVersionTest)
 
     // The version travels as a header here, because get-object carries bytes rather than JSON.

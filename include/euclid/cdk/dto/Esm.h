@@ -5,6 +5,7 @@
 // C++ includes
 #include <map>
 #include <string>
+#include <vector>
 
 // Boost includes
 #include <boost/json.hpp>
@@ -74,6 +75,26 @@ namespace Euclid::CDK::ESM {
         bool versioning{};
 
         /**
+         * @brief The most non-current versions a key keeps here; 0 keeps every one of them.
+         *
+         * @par
+         * Only meaningful with versioning on, and worth setting on a bucket whose keys are written
+         * often: versions are kept until something removes them, so an unbounded count is a bucket
+         * that grows for as long as it is used.
+         */
+        long maxVersions{};
+
+        /**
+         * @brief How many directory markers the bucket holds - zero-byte keys ending in "/".
+         *
+         * @par
+         * Counted apart from "objects", which leaves them out: a marker is something a listing
+         * shows rather than something a client stored, and adding the two together would report a
+         * bucket as holding more than was ever put into it.
+         */
+        long directories{};
+
+        /**
          * @brief Whether the bucket's events are being held.
          *
          * @par
@@ -108,6 +129,45 @@ namespace Euclid::CDK::ESM {
         COM::VariantMap attributes;
         std::string created;
         std::string modified;
+
+        /**
+         * @brief Which version this is, on a bucket that keeps them; empty where versioning is off.
+         *
+         * @par
+         * What DownloadOptions::versionId and DeleteObject() take, so a listing is where the
+         * identifier for either of them comes from.
+         */
+        std::string versionId;
+
+        /**
+         * @brief When the object was last used - its last access, or its last modification where
+         * nothing has read it yet.
+         *
+         * @par
+         * The figure a lifecycle rule measures age against, so it says how close an object is to
+         * being archived. Not the same as "modified": reading an object moves this and leaves that
+         * alone.
+         */
+        std::string lastAccessed;
+
+        /**
+         * @brief LifecycleStandard or LifecycleArchived.
+         *
+         * @par
+         * The one field that says whether a download would succeed. An archived object is listed
+         * and described exactly like any other - its bytes are simply not where a download looks
+         * for them until RestoreObject() brings them back.
+         */
+        std::string lifecycleState;
+
+        /**
+         * @brief When a restored object returns to being archived, or empty if it is not restored.
+         *
+         * @par
+         * Worth reading rather than assuming a restore is permanent: a grace period that runs out
+         * while something is still reading looks exactly like the object vanishing.
+         */
+        std::string restoredUntil;
     };
 
     /**
@@ -152,7 +212,7 @@ namespace Euclid::CDK::ESM {
      *
      * @par
      * The ERN is new as well as the name, so this is the one later calls have to use - nothing
-     * answers to the old one afterwards.
+     * answers to the old one afterward.
      */
     struct EUCLID_CDK_API RenameBucketResult {
         std::string name;
@@ -336,6 +396,17 @@ namespace Euclid::CDK::ESM {
         std::string status;
         std::string contentType;
         std::string md5Sum;
+
+        /**
+         * @brief Whether the upload stored nothing because the key already held these bytes.
+         *
+         * @par
+         * Only ever true on a bucket with versioning on, where writing identical content would
+         * otherwise mint a version that differs from its predecessor in nothing but its id. The
+         * answer then describes the object that was already there, so an upload that reports this
+         * succeeded - it simply had nothing to add.
+         */
+        bool unchanged{};
     };
 
     /**
@@ -577,10 +648,39 @@ namespace Euclid::CDK::ESM {
     };
 
     /**
+     * @brief One level of a bucket, the way a file browser shows a folder.
+     *
+     * @par
+     * A bucket is flat: a directory here is a path that keys lie under rather than something
+     * stored, so the prefixes are derived from the keys and exist whether or not a marker was ever
+     * written for them.
+     */
+    struct EUCLID_CDK_API ObjectListing {
+
+        /**
+         * @brief The objects directly at this level - those whose key has no further delimiter
+         * after the prefix.
+         */
+        Page<Object> objects;
+
+        /**
+         * @brief The paths below it, each ending in the delimiter. These are what a caller descends
+         * into by listing again with the prefix set to one of them.
+         */
+        std::vector<std::string> commonPrefixes;
+    };
+
+    /**
      * @brief Reads a bucket.
      */
     [[nodiscard]]
     EUCLID_CDK_API Bucket ToBucket(const boost::json::value &value);
+
+    /**
+     * @brief Reads a list-objects response that asked for a delimiter.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API ObjectListing ToObjectListing(const boost::json::value &value);
 
     /**
      * @brief Reads a set-bucket-versioning response.
@@ -679,13 +779,19 @@ namespace Euclid::CDK::ESM {
     EUCLID_CDK_API SetBucketPriorityResult ToSetBucketPriorityResult(const boost::json::value &value);
 
     /**
-     * @brief Reads a purge-bucket response.
+     * @brief Reads a delete bucket response.
      */
     [[nodiscard]]
     EUCLID_CDK_API DeleteBucketResult ToDeleteBucketResult(const boost::json::value &value);
 
+    /**
+     * @brief Reads an abort upload response.
+     */
     EUCLID_CDK_API AbortUploadResult ToAbortUploadResult(const boost::json::value &value);
 
+    /**
+     * @brief Reads a purge-bucket response.
+     */
     EUCLID_CDK_API PurgeBucketResult ToPurgeBucketResult(const boost::json::value &value);
 
     /**

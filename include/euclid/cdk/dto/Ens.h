@@ -56,6 +56,30 @@ namespace Euclid::CDK::ENS {
         long retentionPeriod{};
         std::string created;
         std::string modified;
+        /**
+         * @brief How many messages have ever been published here.
+         *
+         * @par
+         * A lifetime total rather than what the topic holds: unlike "messages" it does not fall
+         * when the topic is purged or when retention takes what it was keeping, which makes it the
+         * figure to read when asking whether a publisher is working at all.
+         */
+        long send{};
+
+        /**
+         * @brief How many have been replayed with ResendMessages(), also a lifetime total.
+         *
+         * @par
+         * Well above zero means somebody has had to replay this topic, which is worth seeing
+         * beside what it has delivered.
+         */
+        long resend{};
+
+        /**
+         * @brief Whether a message is dropped once every subscription has had it, rather than kept
+         * for the retention period - see ENS::Ens::SetTopicDeleteAfterDelivery().
+         */
+        bool deleteAfterDelivery{};
     };
 
     /**
