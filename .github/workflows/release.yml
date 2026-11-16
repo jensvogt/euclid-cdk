@@ -591,6 +591,18 @@ jobs:
     needs: deploy
     if: startsWith(github.ref, 'refs/tags/v')
 
+    # contents to push the branch that stores the repositories, pages and id-token to deploy the
+    # site that serves them. Set here rather than at the top of the file so the jobs that only
+    # build keep the narrower grant they already had.
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     env:
       PAGES_BRANCH: gh-pages
       APT_DIST: stable
@@ -752,6 +764,21 @@ jobs:
           # arrive byte for byte.
           : > .nojekyll
 
+          # Something other than a 404 at the root, saying what the two directories below it are.
+          {
+            printf '<!doctype html>\n<html lang="en"><meta charset="utf-8">\n'
+            printf '<title>euclid-cdk packages</title>\n'
+            printf '<h1>euclid-cdk</h1>\n'
+            printf '<p>Signed package repositories for the C++ SDK for a euclid server.</p>\n'
+            printf '<pre>curl -fsSL %s/euclid-cdk.gpg.asc | sudo gpg --dearmor -o /usr/share/keyrings/euclid-cdk.gpg\n' "$base"
+            printf 'echo "deb [signed-by=/usr/share/keyrings/euclid-cdk.gpg] %s/apt %s %s" | sudo tee /etc/apt/sources.list.d/euclid-cdk.list\n' "$base" "${APT_DIST}" "${APT_COMPONENT}"
+            printf 'sudo apt update &amp;&amp; sudo apt install euclid-cdk</pre>\n'
+            printf '<pre>sudo curl -fsSL %s/euclid-cdk.repo -o /etc/yum.repos.d/euclid-cdk.repo\n' "$base"
+            printf 'sudo yum install euclid-cdk</pre>\n'
+            printf '<p><a href="apt/">apt/</a> &middot; <a href="yum/">yum/</a> &middot; '
+            printf '<a href="https://github.com/%s">source</a></p>\n' "${GITHUB_REPOSITORY}"
+          } > index.html
+
       - name: Commit and push
         working-directory: pages
         run: |
@@ -766,3 +793,20 @@ jobs:
           git commit -m "chore: publish euclid-cdk ${GITHUB_REF_NAME#v} to the apt and yum repositories"
           git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
               "HEAD:${PAGES_BRANCH}"
+
+      # The branch is the store; this is what serves it. Pages on this repository is built by a
+      # workflow rather than from a branch, so pushing alone publishes nothing - which is why the
+      # repositories could be complete on the branch and still answer 404 over HTTP.
+      - name: Package the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+          # Suffixed with the attempt: a re-run would otherwise leave a second artifact of the
+          # same name beside the first, and the deployment refuses a name that matches two.
+          name: github-pages-${{ github.run_attempt }}
+
+      - name: Deploy the site
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
