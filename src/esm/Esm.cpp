@@ -68,6 +68,10 @@ namespace Euclid::CDK::ESM {
 
         /**
          * @brief One part of a download, written at its own offset into a file already sized for it.
+         *
+         * @param file input file name
+         * @param offset file offset in bytes
+         * @param data data part
          */
         void writePart(const std::string &file, const long offset, const std::string &data) {
 
