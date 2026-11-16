@@ -141,6 +141,20 @@ namespace Euclid::CDK::ESM {
     struct EUCLID_CDK_API DownloadOptions {
         long partSize{DefaultPartSize};
         int concurrency{DefaultConcurrency};
+
+        /**
+         * @brief Which version to fetch, from ObjectVersion::versionId; empty is the current one.
+         *
+         * @par
+         * Only a bucket with versioning on has any others - see SetBucketVersioning(). Naming a
+         * version is also the one way to read an object whose current version has been deleted,
+         * which is what makes a deletion recoverable.
+         *
+         * @par
+         * Reading a named version does not count as access to the object, so it leaves the
+         * lifecycle clock where it was.
+         */
+        std::string versionId;
     };
 
     /**
@@ -717,7 +731,7 @@ namespace Euclid::CDK::ESM {
         /**
          * @brief Deletes one object, by its own ERN.
          */
-        void DeleteObject(const std::string &ern) const;
+        void DeleteObject(const std::string &ern, const std::string &versionId = {}) const;
 
         /**
          * @brief Deletes several named objects from a bucket in one call.
@@ -874,7 +888,8 @@ namespace Euclid::CDK::ESM {
          * @throws ServiceError if the server refused, HTTP 413 for an object too large included.
          */
         [[nodiscard]]
-        std::string GetObject(const std::string &bucketErn, const std::string &key, long maxInlineSize = DefaultPartSize) const;
+        std::string GetObject(const std::string &bucketErn, const std::string &key, long maxInlineSize = DefaultPartSize,
+                              const std::string &versionId = {}) const;
 
         /**
          * @brief Uploads a local file in parts, several at a time.
@@ -1050,7 +1065,8 @@ namespace Euclid::CDK::ESM {
          * retried attempt starts a new one and the abandoned session is simply never used.
          */
         [[nodiscard]]
-        CreateDownloadResult CreateDownload(const std::string &bucketErn, const std::string &key, int concurrency) const;
+        CreateDownloadResult CreateDownload(const std::string &bucketErn, const std::string &key, int concurrency,
+                                            const std::string &versionId = {}) const;
 
         /**
          * @brief Fetches one part of a download.
@@ -1069,7 +1085,8 @@ namespace Euclid::CDK::ESM {
          * failed.
          */
         [[nodiscard]]
-        HttpResponse GetObjectResponse(const std::string &bucketErn, const std::string &key, long maxInlineSize) const;
+        HttpResponse GetObjectResponse(const std::string &bucketErn, const std::string &key, long maxInlineSize,
+                                       const std::string &versionId = {}) const;
 
         // -- transport ---------------------------------------------------------------------------
 

@@ -941,6 +941,78 @@ BOOST_AUTO_TEST_SUITE(EsmAuthenticationTest)
 
 BOOST_AUTO_TEST_SUITE_END()
 
+BOOST_AUTO_TEST_SUITE(EsmVersionTest)
+
+    // The version travels as a header here, because get-object carries bytes rather than JSON.
+    BOOST_AUTO_TEST_CASE(ReadsANamedVersionOfAnObject) {
+        const EsmClient client(Test::Answering("the older bytes"));
+
+        BOOST_TEST(client.esm.GetObject(kBucket, "q3.pdf", ESM::DefaultPartSize, "v1") == "the older bytes");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-version-id"]) == "v1");
+    }
+
+    // Empty is the current object, and a header saying "" is a version nothing has - so it stays
+    // away rather than being sent blank.
+    BOOST_AUTO_TEST_CASE(AskingForNoVersionSendsNoVersionHeader) {
+        const EsmClient client(Test::Answering("the current bytes"));
+
+        std::ignore = client.esm.GetObject(kBucket, "q3.pdf");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-version-id"]).empty());
+    }
+
+    // The one that matters. DownloadFile() tries a single get-object before falling back to the
+    // multipart path, so a version that reached only the second one would be ignored for every
+    // object small enough to arrive in one piece - handing back the current object instead, with
+    // nothing to say it had.
+    BOOST_AUTO_TEST_CASE(DownloadingAVersionNamesItOnTheSingleRequestPath) {
+        const ScratchFile file("version-single.bin");
+        const EsmClient client(Test::Answering("older contents"));
+
+        BOOST_TEST(client.esm.DownloadFile(kBucket, "q3.pdf", file.path, {.versionId = "v1"}) == 14L);
+        BOOST_TEST(file.Read() == "older contents");
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-version-id"]) == "v1");
+    }
+
+    // And on the multipart path, where it is a body field rather than a header.
+    BOOST_AUTO_TEST_CASE(DownloadingAVersionNamesItOnTheMultipartPath) {
+        const ScratchFile file("version-multi.bin");
+        FakeStorage storage;
+        const std::string body(12U, 'v');
+        storage.Store(kBucket, "big.bin", body);
+
+        const EsmClient client(Test::Authenticated([&storage](const Request &request) -> RawResponse {
+            // The single-request path is refused, which is how the server says "use multipart".
+            if (std::string(request["x-euclid-action"]) == "get-object") {
+                return FakeGateway::Json(ESM::PayloadTooLarge, R"({"error": "too large"})");
+            }
+            if (auto answered = storage.Handle(request); answered.has_value()) return *answered;
+            return FakeGateway::Json(200, "{}");
+        }));
+
+        std::ignore = client.esm.DownloadFile(kBucket, "big.bin", file.path, {.partSize = 4, .versionId = "v1"});
+
+        const auto created = requestFor(client.gateway, "create-download");
+        BOOST_REQUIRE(!std::string(created["x-euclid-action"]).empty());
+        BOOST_TEST(boost::json::parse(created.body()).at("versionId").as_string() == "v1");
+    }
+
+    // With a version it removes that one; without it, the key and everything under it. The
+    // difference is the whole call, so an empty one must not travel.
+    BOOST_AUTO_TEST_CASE(DeletingOneVersionNamesItAndDeletingTheKeyDoesNot) {
+        const EsmClient client(Test::Answering("{}"));
+
+        client.esm.DeleteObject("ern:object/reports/q3.pdf", "v1");
+        auto body = lastBody(client.gateway);
+        BOOST_TEST(body.at("ern").as_string() == "ern:object/reports/q3.pdf");
+        BOOST_TEST(body.at("versionId").as_string() == "v1");
+
+        client.esm.DeleteObject("ern:object/reports/q3.pdf");
+        body = lastBody(client.gateway);
+        BOOST_TEST(!body.as_object().contains("versionId"));
+    }
+
+BOOST_AUTO_TEST_SUITE_END()
+
 BOOST_AUTO_TEST_SUITE(EsmLifecycleTest)
 
     BOOST_AUTO_TEST_CASE(KeepsVersionsWhenAskedTo) {

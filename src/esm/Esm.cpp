@@ -357,8 +357,13 @@ namespace Euclid::CDK::ESM {
                         "count");
     }
 
-    void Esm::DeleteObject(const std::string &ern) const {
-        std::ignore = Call("delete-object", {{"ern", ern}});
+    void Esm::DeleteObject(const std::string &ern, const std::string &versionId) const {
+        boost::json::object payload{{"ern", ern}};
+        // Sent only when named, and the difference is the whole call: with a version it removes
+        // that one, without it the key and every version under it.
+        if (!versionId.empty()) payload["versionId"] = versionId;
+
+        std::ignore = Call("delete-object", payload);
     }
 
     DeleteObjectsResult Esm::DeleteObjects(const std::string &bucketErn, const std::vector<std::string> &keys, const bool background) const {
@@ -455,9 +460,10 @@ namespace Euclid::CDK::ESM {
         return ToStoredObject(Result("put-object", response));
     }
 
-    std::string Esm::GetObject(const std::string &bucketErn, const std::string &key, const long maxInlineSize) const {
+    std::string Esm::GetObject(const std::string &bucketErn, const std::string &key, const long maxInlineSize,
+                               const std::string &versionId) const {
 
-        const auto response = GetObjectResponse(bucketErn, key, maxInlineSize);
+        const auto response = GetObjectResponse(bucketErn, key, maxInlineSize, versionId);
         if (!response.IsSuccess()) throw ServiceError(Target(), "get-object", response.statusCode, response.body);
         return response.body;
     }
@@ -507,7 +513,11 @@ namespace Euclid::CDK::ESM {
 
         // Tried in one request first: an object that fits in one part skips multipart entirely, and
         // "too large" is the server's way of saying this one does not.
-        if (const auto single = GetObjectResponse(bucketErn, key, options.partSize); single.statusCode != PayloadTooLarge) {
+        // The version travels on both paths. It has to: the single-request path is tried first,
+        // and a get-object that ignored it would quietly hand back the current object whenever the
+        // version asked for happened to be small enough to fit in one part.
+        if (const auto single = GetObjectResponse(bucketErn, key, options.partSize, options.versionId);
+            single.statusCode != PayloadTooLarge) {
             if (!single.IsSuccess()) throw ServiceError(Target(), "get-object", single.statusCode, single.body);
             const auto size = static_cast<long>(single.body.size());
             createFileOfSize(file, size);
@@ -516,7 +526,7 @@ namespace Euclid::CDK::ESM {
         }
 
         const auto concurrency = std::max(1, options.concurrency);
-        const auto download = CreateDownload(bucketErn, key, concurrency);
+        const auto download = CreateDownload(bucketErn, key, concurrency, options.versionId);
         createFileOfSize(file, download.size);
 
         runBounded(partCount(download.size, options.partSize), concurrency, [&](const long index) {
@@ -617,9 +627,16 @@ namespace Euclid::CDK::ESM {
         return ToStoredObject(CallWithRetry("complete-upload", {{"uploadId", uploadId}}, headers));
     }
 
-    CreateDownloadResult Esm::CreateDownload(const std::string &bucketErn, const std::string &key, const int concurrency) const {
+    CreateDownloadResult Esm::CreateDownload(const std::string &bucketErn, const std::string &key, const int concurrency,
+                                             const std::string &versionId) const {
+
         const Headers headers{{"x-euclid-expected-concurrency", std::to_string(concurrency)}};
-        return ToCreateDownloadResult(CallWithRetry("create-download", {{"bucketErn", bucketErn}, {"key", key}}, headers));
+
+        boost::json::object payload{{"bucketErn", bucketErn}, {"key", key}};
+        // In the body here, where get-object takes it as a header: this action is ordinary JSON.
+        if (!versionId.empty()) payload["versionId"] = versionId;
+
+        return ToCreateDownloadResult(CallWithRetry("create-download", payload, headers));
     }
 
     std::string Esm::DownloadPart(const std::string &downloadId, const long number, const long partSize) const {
@@ -635,12 +652,17 @@ namespace Euclid::CDK::ESM {
         std::ignore = CallWithRetry("complete-download", {{"downloadId", downloadId}});
     }
 
-    HttpResponse Esm::GetObjectResponse(const std::string &bucketErn, const std::string &key, const long maxInlineSize) const {
-        const Headers headers{
+    HttpResponse Esm::GetObjectResponse(const std::string &bucketErn, const std::string &key, const long maxInlineSize,
+                                        const std::string &versionId) const {
+        Headers headers{
                 {"x-euclid-bucket-ern", bucketErn},
                 {"x-euclid-key", key},
                 {"x-euclid-part-size", std::to_string(maxInlineSize)},
         };
+        // A header rather than a field, because this action carries bytes rather than JSON - and
+        // sent only when named, since an empty one would be a version nothing has.
+        if (!versionId.empty()) headers.emplace("x-euclid-version-id", versionId);
+
         return PostBytes("get-object", {}, headers, _transferTimeout);
     }
 
