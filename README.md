@@ -61,6 +61,42 @@ being told where it is; the DEB, RPM and pkg install under a prefix CMake alread
 Boost and OpenSSL are not dependencies of any of them: the release build links both statically, so
 they are inside the library rather than beside it.
 
+On Linux the package managers are the better route — the repositories below keep every release, so
+an upgrade is an `apt upgrade` rather than finding the next `.deb` by hand.
+
+#### With apt, on Debian and Ubuntu
+
+Every release is published to a signed APT repository, so updates arrive with an ordinary
+`apt upgrade` rather than a download:
+
+```bash
+curl -fsSL https://jensvogt.github.io/euclid-cdk/euclid-cdk.gpg.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/euclid-cdk.gpg
+echo "deb [signed-by=/usr/share/keyrings/euclid-cdk.gpg] https://jensvogt.github.io/euclid-cdk/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/euclid-cdk.list
+sudo apt update
+sudo apt install euclid-cdk
+```
+
+The repository keeps every release, so a particular one can be asked for by name —
+`sudo apt install euclid-cdk=0.15.0`.
+
+#### With yum or dnf, on RHEL and Fedora
+
+```bash
+sudo curl -fsSL https://jensvogt.github.io/euclid-cdk/euclid-cdk.repo \
+  -o /etc/yum.repos.d/euclid-cdk.repo
+sudo yum install euclid-cdk
+```
+
+That file sets both `gpgcheck` and `repo_gpgcheck`, which are two different claims: that the package
+is ours, and that the index listing it is. The RPM carries its own signature, so the first is checked
+against the package itself rather than against a promise made by the repository.
+
+Nothing signs the `.deb`, and nothing needs to: APT's chain runs from the signed `Release` file to
+the `Packages` index to each package's checksum, so tampering with any link is what `apt update`
+reports.
+
 **Verifying a download.** The release carries `SHA256SUMS`, a detached signature for it, and the
 public key — the same key [euclid-rui](https://github.com/jensvogt/euclid-rui) signs its APT
 repository with, so one trusted key covers both:
