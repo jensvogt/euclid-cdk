@@ -17,3 +17,22 @@ Description: C++ SDK for a euclid server: headers, shared and static libraries, 
 License: Apache-2.0
 Vendor: Jens Vogt
 
+Package: euclid-cdk
+Architecture: amd64
+Version: 0.17.0
+Priority: optional
+Section: default
+Maintainer: Jens Vogt <jensvogt47@gmail.com>
+Installed-Size: 23036
+Depends: libstdc++6
+Filename: pool/main/e/euclid-cdk/euclid-cdk-0.17.0-amd64.deb
+Size: 6176580
+MD5sum: 351735e5ca36c56d244f62fa2f70c4af
+SHA1: a3f5e1f12b875822ecdb9b002ac397b01b56f9bf
+SHA256: c231810aceb86564cb3c0a2ab57109b8e1d0114a14568d2e7dad19814d076b5e
+SHA512: 53ca7bca79e767b0c4e048d5bb73b0fe1a125646850c3a4a287c6e6e9f5da3e2122988a9df4e24a37cf3335fb681f944b0f99f7b684c8851f1990c49d8c010b5
+Homepage: https://github.com/jensvogt/euclid-cdk
+Description: C++ SDK for a euclid server: headers, shared and static libraries, and the CMake package config.
+License: Apache-2.0
+Vendor: Jens Vogt
+

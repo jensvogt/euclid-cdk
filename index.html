@@ -3,7 +3,8 @@
 <title>euclid-cdk packages</title>
 <h1>euclid-cdk</h1>
 <p>Signed package repositories for the C++ SDK for a euclid server.</p>
-<pre>curl -fsSL https://jensvogt.github.io/euclid-cdk/euclid-cdk.gpg.asc | sudo gpg --dearmor -o /usr/share/keyrings/euclid-cdk.gpg
+<pre>curl -fsSL https://jensvogt.github.io/euclid-cdk/euclid-cdk.gpg.asc -o /tmp/euclid-cdk.asc
+sudo gpg --dearmor --yes -o /usr/share/keyrings/euclid-cdk.gpg /tmp/euclid-cdk.asc
 echo "deb [signed-by=/usr/share/keyrings/euclid-cdk.gpg] https://jensvogt.github.io/euclid-cdk/apt stable main" | sudo tee /etc/apt/sources.list.d/euclid-cdk.list
 sudo apt update &amp;&amp; sudo apt install euclid-cdk</pre>
 <pre>sudo curl -fsSL https://jensvogt.github.io/euclid-cdk/euclid-cdk.repo -o /etc/yum.repos.d/euclid-cdk.repo
