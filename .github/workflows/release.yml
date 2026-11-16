@@ -527,3 +527,199 @@ jobs:
              artifacts/SHA256SUMS.asc \
              artifacts/euclid-cdk.gpg.asc \
              --clobber
+
+  # ---------------------------------------------------------------------------
+  # Publishes the signed packages into an APT and a YUM repository, so a euclid
+  # machine installs the SDK with the package manager it already has and picks
+  # up later releases with an ordinary update.
+  #
+  # Both repositories live on one gh-pages branch, under apt/ and yum/, and are
+  # rebuilt from everything the branch already holds rather than from this
+  # release alone - so older versions stay installable and "apt install
+  # euclid-cdk=0.14.0" keeps working.
+  #
+  # After deploy, not beside it, and the order matters: the RPM a yum client
+  # checks is the one deploy signed. Publishing the unsigned package would give
+  # every "yum install" a signature error, which is the correct response to it.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish the APT and YUM repositories
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    env:
+      PAGES_BRANCH: gh-pages
+      APT_DIST: stable
+      APT_COMPONENT: main
+      APT_ARCH: amd64
+
+    steps:
+      - name: Install the repository tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils createrepo-c gnupg
+
+      # From the release rather than from the build artifacts: the release holds the packages as
+      # they were signed, and the signature inside the RPM is the whole point of this job.
+      - name: Download the signed packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p incoming
+          gh release download "${GITHUB_REF_NAME}" --dir incoming \
+             --pattern 'euclid-cdk-*.deb' --pattern 'euclid-cdk-*.rpm'
+          ls -l incoming
+
+      - name: Check the signing key is available
+        env:
+          KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEY}" ] || [ -z "${KEY_ID}" ]; then
+            echo "APT_GPG_PRIVATE_KEY and APT_GPG_KEY_ID must be set: an unsigned repository is" >&2
+            echo "one apt and dnf both refuse, so nothing was published." >&2
+            exit 1
+          fi
+
+      - name: Import the signing key
+        env:
+          KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: printf '%s' "${KEY}" | gpg --batch --import
+
+      # Cloned when it exists so that what is already published survives, and started empty the
+      # first time. Single-branch and shallow: the history of a package repository is of no
+      # interest to this job, and a full clone of one grows with every release.
+      - name: Check out or start the pages branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads "https://github.com/${{ github.repository }}.git" "${PAGES_BRANCH}" >/dev/null 2>&1; then
+            git clone --branch "${PAGES_BRANCH}" --single-branch --depth 1 \
+                "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" pages
+          else
+            mkdir pages
+            git -C pages init -b "${PAGES_BRANCH}"
+          fi
+          mkdir -p pages/apt/pool/main/e/euclid-cdk pages/yum
+
+      - name: Add the packages
+        run: |
+          set -euo pipefail
+          cp incoming/euclid-cdk-*.deb pages/apt/pool/main/e/euclid-cdk/
+          cp incoming/euclid-cdk-*.rpm pages/yum/
+
+      # Regenerated over the whole pool, not appended to: the indices describe what is there, and
+      # one built from this release alone would make every earlier version disappear from apt.
+      - name: Build the APT indices
+        working-directory: pages/apt
+        run: |
+          set -euo pipefail
+          dist_dir="dists/${APT_DIST}/${APT_COMPONENT}/binary-${APT_ARCH}"
+          mkdir -p "$dist_dir"
+
+          apt-ftparchive packages pool > "$dist_dir/Packages"
+          gzip -9kf "$dist_dir/Packages"
+
+          # Written out rather than defaulted, because apt refuses a Release that does not say
+          # which suite and architectures it is for.
+          {
+            printf 'APT::FTPArchive::Release::Origin "euclid";\n'
+            printf 'APT::FTPArchive::Release::Label "euclid-cdk";\n'
+            printf 'APT::FTPArchive::Release::Suite "%s";\n' "${APT_DIST}"
+            printf 'APT::FTPArchive::Release::Codename "%s";\n' "${APT_DIST}"
+            printf 'APT::FTPArchive::Release::Architectures "%s";\n' "${APT_ARCH}"
+            printf 'APT::FTPArchive::Release::Components "%s";\n' "${APT_COMPONENT}"
+            printf 'APT::FTPArchive::Release::Description "The C++ SDK for a euclid server";\n'
+          } > apt-ftparchive.conf
+          apt-ftparchive -c apt-ftparchive.conf release "dists/${APT_DIST}" > "dists/${APT_DIST}/Release"
+          rm apt-ftparchive.conf
+
+      # Both forms, because which one a client wants depends on its age: InRelease is the clearsigned
+      # file apt prefers, Release.gpg the detached signature older ones look for.
+      #
+      # Nothing signs the .deb itself, and nothing needs to: the Release file is signed, it carries
+      # the checksum of Packages, and Packages carries the checksum of every .deb. Breaking any link
+      # in that chain is what apt reports.
+      - name: Sign the APT indices
+        working-directory: pages/apt
+        env:
+          KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+          PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          release="dists/${APT_DIST}/Release"
+          printf '%s' "${PASSPHRASE}" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --default-key "${KEY_ID}" -abs -o "${release}.gpg" "${release}"
+          printf '%s' "${PASSPHRASE}" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --default-key "${KEY_ID}" --clearsign -o "dists/${APT_DIST}/InRelease" "${release}"
+          gpg --batch --yes --verify "${release}.gpg" "${release}"
+
+      - name: Build and sign the YUM metadata
+        working-directory: pages/yum
+        env:
+          KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+          PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          # Regenerated whole rather than --update: there is no existing metadata the first time,
+          # and with a handful of packages the saving from reusing checksums is not worth a second
+          # code path that only runs once.
+          createrepo_c .
+
+          # repo_gpgcheck=1 is what checks this; gpgcheck=1 checks the signature deploy put inside
+          # the package. The two are different claims - that the index is ours, and that the package
+          # is - and a repository worth trusting makes both.
+          printf '%s' "${PASSPHRASE}" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --default-key "${KEY_ID}" --armor --detach-sign --output repodata/repomd.xml.asc \
+              repodata/repomd.xml
+          gpg --batch --yes --verify repodata/repomd.xml.asc repodata/repomd.xml
+
+      # The key, and a ready-made source file for each package manager, so following the README is
+      # a copy rather than a transcription.
+      - name: Write the key and the client configuration
+        working-directory: pages
+        env:
+          KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          # Derived from GITHUB_REPOSITORY rather than the event payload, which differs in shape
+          # between the events this workflow answers to.
+          base="https://${GITHUB_REPOSITORY%%/*}.github.io/${GITHUB_REPOSITORY#*/}"
+
+          gpg --export --armor "${KEY_ID}" > euclid-cdk.gpg.asc
+
+          printf 'deb [signed-by=/usr/share/keyrings/euclid-cdk.gpg] %s/apt %s %s\n' \
+                 "$base" "${APT_DIST}" "${APT_COMPONENT}" > euclid-cdk.list
+
+          {
+            printf '[euclid-cdk]\n'
+            printf 'name=euclid-cdk\n'
+            printf 'baseurl=%s/yum\n' "$base"
+            printf 'enabled=1\n'
+            printf 'gpgcheck=1\n'
+            printf 'repo_gpgcheck=1\n'
+            printf 'gpgkey=%s/euclid-cdk.gpg.asc\n' "$base"
+          } > euclid-cdk.repo
+
+          # Pages would otherwise run the tree through Jekyll, which skips directories beginning
+          # with an underscore and has been known to rewrite what it serves. A package index has to
+          # arrive byte for byte.
+          : > .nojekyll
+
+      - name: Commit and push
+        working-directory: pages
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The repositories already describe this release; nothing to push."
+            exit 0
+          fi
+          git commit -m "chore: publish euclid-cdk ${GITHUB_REF_NAME#v} to the apt and yum repositories"
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+              "HEAD:${PAGES_BRANCH}"
