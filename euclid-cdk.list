@@ -1,0 +1,1 @@
+deb [signed-by=/usr/share/keyrings/euclid-cdk.gpg] https://jensvogt.github.io/euclid-cdk/apt stable main

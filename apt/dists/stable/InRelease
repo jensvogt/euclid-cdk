@@ -1,0 +1,43 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Architectures: amd64
+Codename: stable
+Components: main
+Date: Mon, 16 Nov 2026 12:15:08 +0000
+Description: The C++ SDK for a euclid server
+Label: euclid-cdk
+Origin: euclid
+Suite: stable
+MD5Sum:
+ 1a27b5ab96a4286b565193fde8c55483              185 Release
+ 656b2a152d61b3f8906ca73ba8a8b2a5              750 main/binary-amd64/Packages
+ 0983890eacb138ae9a1f729389262be3              533 main/binary-amd64/Packages.gz
+SHA1:
+ 0de458de8e381349db94b8140779fb1384fa5461              185 Release
+ 9f2ce8db9ff7e8b4be50a588884660e423dc4b79              750 main/binary-amd64/Packages
+ 6e7dbebc8c87d15bc17c242c10c94e75e1173c83              533 main/binary-amd64/Packages.gz
+SHA256:
+ 62249947a405ca2ac3d7ae09628bd92c3e398d95df0904ec509bba17300522cb              185 Release
+ 752e7b10c1643bb03fe04ac974c4729c1f1231a3c0289df2100eaa4a3f15a5ac              750 main/binary-amd64/Packages
+ 1803e853f7d7cef2f4505ffa8ae90fc2bc212ee966dfce63f8ae1fbbb9df2b01              533 main/binary-amd64/Packages.gz
+SHA512:
+ 95fd809c1b09899d8b92a3dc6917674111483432b83489e3579a8e71bbcf3a7273b4eac872932a98e5124ae8d9001ac9cb9dd88905f29eaa2efec46535422fde              185 Release
+ ab7542f5ef38686bcc0de9cd1ecb01587863b7280ef39217d6950b3199d2c5266161a7854e91a5329520d3392ce5ae042d9a17c47916a5567b0b55208662550d              750 main/binary-amd64/Packages
+ 81bcdb1679693b37614f6e9fff5fef643bf681fd96f0b412d4e35c8a94fd3a1bae1cb03b47639eef05abc6062f7516a504dbaa9cc0cdd98d3a192f0f12924f87              533 main/binary-amd64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEEJmDsGH+Fam0fVjo2tcOotlVHYkQFAmr6880ACgkQtcOotlVH
+YkR17g/9HsqeBijeoXx2w56jmEe3rU9o1ZStisPBLgA0Ops70by/ps2Zfpk5xiri
+w6beXQOgWGSYpSwjqWqnMmhGC+36Y0Gejh+bZlYGjUX5avPDEBVM239JAPnK5PSQ
+5uYTGrSL1waUfY6wLq3HKGscOTWb25E4Ikb+t+Ok2ErxdpzzdJYJLPvfQjY6O81c
+GWxW8YGmJADoazX7x/06MCZ7ijW6mWteVG8R/ueeCjWRvcmfkElTCUZrn9tK/gL3
+LSDwykgjmwsYQ3iMP4sv3Yze1C4d/lbu4P/vk16iVzFW2tmyqhikD9KSIFFAvmeJ
+dmuMZJkttlJwFiQUvI2+nlG3eUSgH/bXVsRg1toYPIOspgMkf+nCYylBdjmJYwGL
+3vo7xUF0oOLlfr/HVJHhZwKhoQI4OJoh7lhIob1zxhi9k5GO6oBWH9jZeT0aufrY
+4ByGnfg25M9pIUXhoyGA/CtkI3oYgNvNChAUsfpJhm5Tuo9IlB+7EjtqNcoByy9n
+cWhxep8BHT3GitzhiqNsuwZtqifMIvH/BcjReZohkgkmtj9x6rIEH5OO4yXdEf49
++7+DmPI0h4Y9hcBq84q3/swWro7ZjW9YOOgp5CWas7u9fEXhE6HdJ/yJid/Jvh12
+3LOmfrmPRYeiK7ZII9CvjRM0qZ54tTlp3x6lNYAQww7PNZciK/E=
+=H83n
+-----END PGP SIGNATURE-----
