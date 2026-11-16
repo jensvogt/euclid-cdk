@@ -501,21 +501,30 @@ jobs:
           fi
           printf '%s' "${PASSPHRASE}" | "$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase" --preset "${keygrip}"
 
+          # Into rpm's own keyring, which is separate from gpg's: without it "rpm -K" below can
+          # only say NOKEY - that a signature is present and unverifiable - which is not the
+          # assurance this step exists to give.
+          gpg --export --armor "${KEY_ID}" > "${RUNNER_TEMP}/euclid-cdk-pub.asc"
+          sudo rpm --import "${RUNNER_TEMP}/euclid-cdk-pub.asc"
+
           for rpmfile in artifacts/*.rpm; do
             [ -e "$rpmfile" ] || continue
             rpm --define "_gpg_name ${KEY_ID}" --addsign "$rpmfile"
 
-            # Asked for the signature itself rather than grepped out of "rpm -qpi", which prints a
-            # Signature line for an unsigned package too - saying "(none)". A check that passes
-            # either way is not a check.
-            signature="$(rpm -qp --queryformat '%{SIGPGP:pgpsig}' "$rpmfile")"
-            case "${signature}" in
-              ''|'(none)')
-                echo "$rpmfile came back unsigned" >&2
+            # Verified with rpm rather than by asking which signature tag is set. --addsign writes
+            # a *header* signature, so %{SIGPGP:pgpsig} - the payload tag - is empty on a package
+            # that is perfectly well signed, and an earlier version of this step failed the build
+            # over it. "rpm -K" answers the question actually worth asking: is the signature there,
+            # and does it check out against the key.
+            check="$(rpm -K "$rpmfile")"
+            case "${check}" in
+              *"digests signatures OK"*) ;;
+              *)
+                echo "$rpmfile did not verify: ${check}" >&2
                 exit 1
                 ;;
             esac
-            echo "$rpmfile signed: ${signature}"
+            echo "$rpmfile: ${check}"
           done
 
       - name: Write and sign the checksums
