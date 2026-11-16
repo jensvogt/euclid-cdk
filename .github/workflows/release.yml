@@ -227,23 +227,44 @@ jobs:
           # somebody installing it.
           deb="euclid-cdk-${EUCLID_CDK_VERSION}-amd64.deb"
           rpmfile="euclid-cdk-${EUCLID_CDK_VERSION}-x86_64.rpm"
-          dpkg --contents "$deb" | grep -q "usr/include/euclid/cdk/Euclid.h"
-          dpkg --contents "$deb" | grep -q "usr/lib/cmake/euclid-cdk/"
-          rpm -qlp "$rpmfile" | grep -q "usr/include/euclid/cdk/Euclid.h"
+
+          # Each listing is taken once and then matched as a string, rather than piped into
+          # "grep -q". Under "set -o pipefail" that pipeline fails when the check *succeeds*:
+          # grep leaves on the first match, the tar inside dpkg-deb loses its stdout mid-write,
+          # and its error becomes the pipeline's status.
+          deb_files="$(dpkg --contents "$deb")"
+          rpm_files="$(rpm -qlp "$rpmfile")"
+
+          want() {
+            case "$2" in
+              *"$3"*) ;;
+              *)
+                echo "$1 does not contain $3" >&2
+                echo "what it does contain:" >&2
+                printf '%s\n' "$2" >&2
+                exit 1
+                ;;
+            esac
+          }
+          want "$deb" "$deb_files" "usr/include/euclid/cdk/Euclid.h"
+          want "$deb" "$deb_files" "usr/lib/cmake/euclid-cdk/"
+          want "$rpmfile" "$rpm_files" "usr/include/euclid/cdk/Euclid.h"
 
           echo "shared libraries libeuclid-cdk.so asks for:"
           needed="$(objdump -p pkgroot/usr/lib/libeuclid-cdk.so | awk '/NEEDED/ {print $2}')"
-          echo "${needed}" | sed 's/^/  /'
+          printf '%s\n' "${needed}" | sed 's/^/  /'
 
           # Refused rather than printed and shipped. The packages name no Boost or OpenSSL
           # dependency because the release build has them statically; if that ever stops being
           # true the package is broken for everybody who installs it, and the only symptom is a
           # loader error on first use. Cheaper to stop here and make somebody decide.
-          if echo "${needed}" | grep -qE 'libboost|libssl|libcrypto'; then
-            echo "The library links Boost or OpenSSL dynamically, which these packages do not" >&2
-            echo "declare. Either build them statically or add the dependencies to fpm above." >&2
-            exit 1
-          fi
+          case "${needed}" in
+            *libboost*|*libssl*|*libcrypto*)
+              echo "The library links Boost or OpenSSL dynamically, which these packages do not" >&2
+              echo "declare. Either build them statically or add the dependencies to fpm above." >&2
+              exit 1
+              ;;
+          esac
 
       # A component package, installed at "/" over a root that already says usr/local - so the pkg
       # puts the SDK exactly where a macOS build looks for it without an install-location to argue
