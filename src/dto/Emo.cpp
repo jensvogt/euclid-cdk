@@ -50,6 +50,8 @@ namespace Euclid::CDK::EMO {
         // "do not narrow by this", and an empty string as a name that matches nothing.
         if (!name.empty()) json["name"] = name;
         if (!labels.empty()) json["labels"] = labelsToJson(labels);
+        if (!labelName.empty()) json["labelName"] = labelName;
+        if (!labelValue.empty()) json["labelValue"] = labelValue;
         if (limit > 0) json["limit"] = limit;
         if (!from.empty()) json["from"] = from;
         if (!to.empty()) json["to"] = to;

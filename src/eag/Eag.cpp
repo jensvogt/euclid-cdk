@@ -118,6 +118,7 @@ namespace Euclid::CDK::EAG {
         put(payload, "maxBytes", options.maxBytes);
         put(payload, "partSize", options.partSize);
         put(payload, "contentTypes", options.contentTypes);
+        put(payload, "timeout", options.timeout);
         put(payload, "region", options.region);
         // "namespace" on the wire, as in EAP and ETS.
         put(payload, "namespace", options.nameSpace);
@@ -165,6 +166,10 @@ namespace Euclid::CDK::EAG {
     void Eag::ApplyRouteOptions(boost::json::object &payload, const RouteOptions &options) {
         payload["methods"] = stringsOf(options.methods);
         payload["active"] = options.active;
+        // Left out when it is zero, like the strings below. The server would take a zero as the
+        // same thing - its default - so this is tidiness rather than correctness: a route that says
+        // nothing about a timeout reads as one that was never given one.
+        if (options.timeout > 0) payload["timeout"] = options.timeout;
         putIfSet(payload, "authentication", options.authentication);
         putIfSet(payload, "namespace", options.nameSpace);
         putIfSet(payload, "region", options.region);

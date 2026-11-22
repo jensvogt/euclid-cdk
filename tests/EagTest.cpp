@@ -76,6 +76,7 @@ namespace {
                 {"moduleAction", ""},
                 {"methods", boost::json::array{"GET", "POST"}},
                 {"authentication", "EUCLID"},
+                {"timeout", 120},
                 {"active", true},
                 {"created", "2026-09-01T08:00:00Z"},
                 {"modified", "2026-09-19T08:00:00Z"},
@@ -128,10 +129,27 @@ BOOST_AUTO_TEST_SUITE(EagRouteTest)
         BOOST_TEST(!body.as_object().contains("namespace"));
         BOOST_TEST(!body.as_object().contains("region"));
         BOOST_TEST(!body.as_object().contains("authentication"));
+        BOOST_TEST(!body.as_object().contains("timeout"));
         // Sent whatever happens: an empty method list is what says "every method", and a route
         // created without one said nothing about being out of service.
         BOOST_TEST(body.at("methods").as_array().empty());
         BOOST_TEST(body.at("active").as_bool() == true);
+    }
+
+    // The gateway holds a connection to the caller and one to the instance for the whole of a
+    // request, so an hour is already a job rather than a request - which is why the server refuses
+    // anything beyond MaxRouteTimeout rather than clamping it. A route cut off sooner than its
+    // author was told is worse than a rejected configuration.
+    BOOST_AUTO_TEST_CASE(PublishesARouteWithATimeoutOfItsOwn) {
+        const EagClient client(Test::Answering(boost::json::serialize(route())));
+
+        const auto published = client.eag.CreateRoute("orders", "/orders", "order-service", {.timeout = 120});
+
+        BOOST_TEST(published.timeout == 120L);
+        BOOST_TEST(lastBody(client.gateway).at("timeout").as_int64() == 120);
+
+        std::ignore = client.eag.UpdateRoute("orders", {.timeout = EAG::MaxRouteTimeout});
+        BOOST_TEST(lastBody(client.gateway).at("timeout").as_int64() == EAG::MaxRouteTimeout);
     }
 
     BOOST_AUTO_TEST_CASE(PublishesAPathThatReachesEuclidItself) {

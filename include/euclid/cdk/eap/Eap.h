@@ -111,8 +111,15 @@ namespace Euclid::CDK::EAP {
      * @brief What an application's type reads as.
      *
      * @par
+     * TypeProcess is started and kept up: an exit is a fault, and the pool is held at its instance
+     * count. TypeJob is started to do one thing and finish, where exit 0 is success and nothing
+     * restarts it.
+     *
+     * @par
      * TypeJob matters to more than scheduling: a job's instance is a *run* of it, which is why
-     * RebalanceApplication() refuses one - moving a run would start it again.
+     * RebalanceApplication() refuses one - moving a run would start it again. It is also the only
+     * type a schedule means anything on, which is why the server refuses a schedule without one
+     * rather than recording a cron expression nothing will ever read.
      */
     inline constexpr std::string_view TypeProcess = "PROCESS";
     inline constexpr std::string_view TypeJob = "JOB";
@@ -261,15 +268,26 @@ namespace Euclid::CDK::EAP {
         std::vector<std::string> buckets;
 
         /**
-         * @brief Likewise for queues.
+         * @brief Likewise for queues, topics and secrets.
          */
         std::vector<std::string> queues;
+        std::vector<std::string> topics;
+        std::vector<std::string> secrets;
 
         /**
          * @brief An existing user to run as. Left empty, euclid creates a technical principal for
          * the application - which is the better answer, and why this is not required.
          */
         std::string user;
+
+        /**
+         * @brief The labels a node has to carry for this application to be placed on it.
+         *
+         * @par
+         * Empty - the ordinary case - means the manager runs it itself rather than handing it to a
+         * node.
+         */
+        std::map<std::string, std::string> nodeLabels;
 
         /**
          * @brief The smallest the pool goes; at least one.
@@ -285,6 +303,32 @@ namespace Euclid::CDK::EAP {
          * @brief How long an instance has to become ready; at least 1000.
          */
         long readyTimeoutMs{DefaultReadyTimeoutMs};
+
+        /**
+         * @brief Memory per instance, in MiB; 0 is no limit.
+         */
+        long memoryLimitMb{};
+
+        /**
+         * @brief CPU per instance, in cores; 0 is no limit. Fractional, so 0.5 is half a core.
+         */
+        double cpuLimit{};
+
+        /**
+         * @brief TypeProcess or TypeJob; empty means TypeProcess.
+         *
+         * @par
+         * Matched exactly by the server rather than case-insensitively, and an unrecognised value is
+         * refused instead of read as a process - a job that silently became a service would be
+         * restarted forever after doing its work once.
+         */
+        std::string type;
+
+        /**
+         * @brief When a job runs, as a cron expression. Only valid with TypeJob, which the server
+         * checks: a schedule on a process is refused rather than stored and never read.
+         */
+        std::string schedule;
     };
 
     /**
@@ -310,10 +354,10 @@ namespace Euclid::CDK::EAP {
      * std::optional says here.
      *
      * @par
-     * "buckets" and "queues" are re-resolved together whenever either is named, so naming one and
-     * not the other revokes what the other used to grant. Name both, or neither. They are resolved
-     * in the namespace the application is in *after* this update, which is what makes moving one and
-     * re-granting its resources a single call.
+     * The four resource lists are re-resolved *together* whenever any one of them is named, so
+     * naming one and not the others revokes what the others used to grant. Name all of them, or none
+     * of them. They are resolved in the namespace the application is in *after* this update, which
+     * is what makes moving one and re-granting its resources a single call.
      *
      * @par
      * "nameSpace" is a move rather than a field change, and the one way an application deployed
@@ -328,9 +372,21 @@ namespace Euclid::CDK::EAP {
         std::optional<std::map<std::string, std::string>> environment;
         std::optional<std::vector<std::string>> buckets;
         std::optional<std::vector<std::string>> queues;
+        std::optional<std::vector<std::string>> topics;
+        std::optional<std::vector<std::string>> secrets;
+        std::optional<std::map<std::string, std::string>> nodeLabels;
         std::optional<long> minInstances;
         std::optional<long> maxInstances;
         std::optional<long> readyTimeoutMs;
+        std::optional<long> memoryLimitMb;
+        std::optional<double> cpuLimit;
+        std::optional<std::string> type;
+
+        /**
+         * @brief A cron expression, or an empty string to take the schedule away and leave the job
+         * started by hand.
+         */
+        std::optional<std::string> schedule;
         std::optional<std::string> nameSpace;
     };
 

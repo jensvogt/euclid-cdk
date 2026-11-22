@@ -20,6 +20,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <tuple>
 
 // Euclid includes
 #include <euclid/cdk/Euclid.h>
@@ -138,13 +139,13 @@ int main(const int argc, char *argv[]) {
             walk(eqs, ens, queue.ern, topic.ern);
         } catch (...) {
             ens.DeleteTopic(topic.ern);
-            eqs.PurgeQueue(queue.ern);
+            std::ignore = eqs.PurgeQueue(queue.ern);
             eqs.DeleteQueue(queue.ern);
             throw;
         }
 
         ens.DeleteTopic(topic.ern);
-        eqs.PurgeQueue(queue.ern);
+        std::ignore = eqs.PurgeQueue(queue.ern);
         eqs.DeleteQueue(queue.ern);
         std::cout << "\ndeleted queue and topic " << name << " again\n";
 

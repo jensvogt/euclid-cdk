@@ -129,7 +129,7 @@ BOOST_AUTO_TEST_SUITE(EnsTopicTest)
                 {"get-topic-metadata", R"({"region": "eu-central-1", "accountId": "000000000000", "owner": "jens",
                                            "nameSpace": "reports", "name": "order-events", "ern": "ern:topic/order-events",
                                            "size": 4096, "messages": 12, "status": "STOPPED",
-                                           "retentionPeriod": 0, "held": 5})"},
+                                           "retentionPeriod": 0, "deleteAfterDelivery": true, "held": 5})"},
         }));
 
         BOOST_TEST(client.ens.GetTopicErn("order-events") == kTopic);
@@ -140,6 +140,9 @@ BOOST_AUTO_TEST_SUITE(EnsTopicTest)
         // What starting the topic again would have to fan out.
         BOOST_TEST(metadata.held == 5L);
         BOOST_TEST(metadata.retentionPeriod == ENS::InstallationRetention);
+        // Reported here as well as on the topic itself, because this is the call a publisher makes
+        // before deciding whether what it is about to send will still be readable afterwards.
+        BOOST_TEST(metadata.deleteAfterDelivery);
     }
 
     BOOST_AUTO_TEST_CASE(PurgesAndDeletesATopicAndTagsIt) {

@@ -64,6 +64,7 @@ namespace Euclid::CDK::ENS {
                 .messages = Json::Number(value, "messages"),
                 .status = Json::Text(value, "status"),
                 .retentionPeriod = Json::Number(value, "retentionPeriod"),
+                .deleteAfterDelivery = Json::Flag(value, "deleteAfterDelivery"),
                 .held = Json::Number(value, "held"),
         };
     }

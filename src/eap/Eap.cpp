@@ -60,7 +60,7 @@ namespace Euclid::CDK::EAP {
     Application Eap::CreateApplication(const std::string &applicationId, const std::string &runtime,
                                        const std::string &bucket, const std::string &artifact,
                                        const CreateApplicationOptions &options) const {
-        const boost::json::object payload{
+        boost::json::object payload{
                 {"applicationId", applicationId},
                 {"runtime", runtime},
                 {"bucket", bucket},
@@ -71,11 +71,24 @@ namespace Euclid::CDK::EAP {
                 {"environment", mapOf(options.environment)},
                 {"buckets", stringsOf(options.buckets)},
                 {"queues", stringsOf(options.queues)},
+                {"topics", stringsOf(options.topics)},
+                {"secrets", stringsOf(options.secrets)},
                 {"user", options.user},
+                {"nodeLabels", mapOf(options.nodeLabels)},
                 {"minInstances", options.minInstances},
                 {"maxInstances", options.maxInstances},
                 {"readyTimeoutMs", options.readyTimeoutMs},
+                {"memoryLimitMb", options.memoryLimitMb},
+                {"cpuLimit", options.cpuLimit},
         };
+
+        // Left out rather than sent empty, unlike the rest: the server refuses an unrecognised type
+        // instead of reading it as a process, and "" is unrecognised. Same for the schedule, which
+        // it refuses outright unless the type is a job - so an empty one travelling would make
+        // every ordinary deployment a rejection.
+        if (!options.type.empty()) payload["type"] = options.type;
+        if (!options.schedule.empty()) payload["schedule"] = options.schedule;
+
         return ApplicationOf("create-application", payload);
     }
 
@@ -88,11 +101,22 @@ namespace Euclid::CDK::EAP {
         put(payload, "command", options.command);
         put(payload, "arguments", options.arguments);
         put(payload, "environment", options.environment);
+        // All four or none: the server re-resolves the lot whenever any one of them is named, so a
+        // caller naming only one revokes what the others granted.
         put(payload, "buckets", options.buckets);
         put(payload, "queues", options.queues);
+        put(payload, "topics", options.topics);
+        put(payload, "secrets", options.secrets);
+        put(payload, "nodeLabels", options.nodeLabels);
         put(payload, "minInstances", options.minInstances);
         put(payload, "maxInstances", options.maxInstances);
         put(payload, "readyTimeoutMs", options.readyTimeoutMs);
+        put(payload, "memoryLimitMb", options.memoryLimitMb);
+        put(payload, "cpuLimit", options.cpuLimit);
+        put(payload, "type", options.type);
+        // An empty schedule does travel here, where it does not on a create: this is how a job's
+        // schedule is taken away, and the server reads the field being present as the request.
+        put(payload, "schedule", options.schedule);
         // "namespace" on the wire, as everywhere in this module.
         put(payload, "namespace", options.nameSpace);
 

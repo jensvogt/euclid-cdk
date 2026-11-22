@@ -71,18 +71,30 @@ namespace {
                 {"command", ""},
                 {"arguments", boost::json::array{"--port", "8080"}},
                 {"environment", boost::json::object{{"EUCLID_LOG_LEVEL", "info"}}},
+                {"artifactSize", 18874368},
                 {"resources", boost::json::array{"ern:queue/orders", "ern:bucket/invoices"}},
+                {"nodeLabels", boost::json::object{{"zone", "dmz"}}},
                 {"userId", "app-order-service-a1b2"},
+                {"userExists", true},
                 {"logLevel", ""},
                 {"minInstances", 1},
                 {"maxInstances", 4},
                 {"readyTimeoutMs", 30000},
+                {"memoryLimitMb", 512},
+                // Fractional on purpose: half a core is a real limit, and reading it as a whole
+                // number would report it as no limit at all.
+                {"cpuLimit", 0.5},
+                {"type", "PROCESS"},
+                {"schedule", ""},
+                // Left empty by the server when there is no schedule, rather than formatted from
+                // the epoch - which would read as a job overdue by half a century.
+                {"nextRunAt", ""},
                 {"desiredState", desiredState},
                 {"state", state},
                 {"instances", state == "RUNNING" ? 2 : 0},
                 {"endpoints", state == "RUNNING"
-                                      ? boost::json::array{boost::json::object{{"instanceId", "i-1"}, {"pid", 4711}, {"httpPort", 34001}},
-                                                           boost::json::object{{"instanceId", "i-2"}, {"pid", 4712}, {"httpPort", 34002}}}
+                                      ? boost::json::array{boost::json::object{{"instanceId", "i-1"}, {"pid", 4711}, {"host", "node-a"}, {"httpPort", 34001}},
+                                                           boost::json::object{{"instanceId", "i-2"}, {"pid", 4712}, {"host", "node-b"}, {"httpPort", 34002}}}
                                       : boost::json::array{}},
                 {"created", "2026-09-01T08:00:00Z"},
                 {"modified", "2026-09-19T08:00:00Z"},
@@ -133,7 +145,69 @@ BOOST_AUTO_TEST_SUITE(EapDeploymentTest)
         BOOST_TEST(body.at("user").as_string() == "");
     }
 
-    // The server distinguishes a field being sent from one that is not, rather than one value from
+    BOOST_AUTO_TEST_CASE(ReadsTheWholeDeployedDefinitionBack) {
+        const EapClient client(Test::Answering(boost::json::serialize(application())));
+
+        const auto deployed = client.eap.GetApplication("order-service");
+
+        BOOST_TEST(deployed.artifactSize == 18874368L);
+        BOOST_TEST(deployed.nodeLabels.at("zone") == "dmz");
+        BOOST_TEST(deployed.memoryLimitMb == 512L);
+        // Real rather than a long: half a core is a limit, and reading it as a whole number would
+        // report it as no limit at all.
+        BOOST_TEST(deployed.cpuLimit == 0.5);
+        BOOST_TEST(deployed.type == std::string(EAP::TypeProcess));
+        BOOST_TEST(deployed.schedule == "");
+        BOOST_TEST(deployed.nextRunAt == "");
+        // False is the interesting answer: the principal is checked when the application is
+        // created and never again, so one deleted underneath a definition that goes on naming it
+        // turns "euclid refused my secret" into "this application's user does not exist".
+        BOOST_TEST(deployed.userExists);
+    }
+
+    // A job is a different thing from a service, and the server refuses a type it does not
+    // recognise rather than reading it as a process - a job that silently became one would be
+    // restarted forever after doing its work once. So an empty type must not travel.
+    BOOST_AUTO_TEST_CASE(DeploysAScheduledJob) {
+        auto scheduled = application();
+        scheduled["type"] = "JOB";
+        scheduled["schedule"] = "0 2 * * *";
+        scheduled["nextRunAt"] = "2026-11-23T02:00:00Z";
+        const EapClient client(Test::Answering(boost::json::serialize(scheduled)));
+
+        const auto job = client.eap.CreateApplication("nightly-roll", std::string(EAP::RuntimeBinary),
+                                                      "artifacts", "nightly-roll-1.0.0",
+                                                      {.nodeLabels = {{"zone", "dmz"}},
+                                                       .memoryLimitMb = 512,
+                                                       .cpuLimit = 0.5,
+                                                       .type = std::string(EAP::TypeJob),
+                                                       .schedule = "0 2 * * *"});
+
+        BOOST_TEST(job.type == std::string(EAP::TypeJob));
+        BOOST_TEST(job.nextRunAt == "2026-11-23T02:00:00Z");
+
+        const auto body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("type").as_string() == "JOB");
+        BOOST_TEST(body.at("schedule").as_string() == "0 2 * * *");
+        BOOST_TEST(body.at("nodeLabels").as_object().at("zone").as_string() == "dmz");
+        BOOST_TEST(body.at("memoryLimitMb").as_int64() == 512);
+        BOOST_TEST(body.at("cpuLimit").as_double() == 0.5);
+    }
+
+    // Left out rather than sent empty: the server refuses an unrecognised type, and "" is
+    // unrecognised - so an ordinary deployment that said nothing about its type would be refused
+    // outright. Same for the schedule, which it refuses unless the type is a job.
+    BOOST_AUTO_TEST_CASE(ADeploymentThatSaysNothingAboutItsTypeSendsNothing) {
+        const EapClient client(Test::Answering(boost::json::serialize(application())));
+
+        std::ignore = client.eap.CreateApplication("order-service", std::string(EAP::RuntimeBinary),
+                                                   "artifacts", "order-service-1.4.0");
+
+        const auto body = lastBody(client.gateway).as_object();
+        BOOST_TEST(!body.contains("type"));
+        BOOST_TEST(!body.contains("schedule"));
+    }
+
     // A copy names where it is going, and says nothing about the name unless it is being changed:
     // the server reads an absent targetApplicationId as "the original's name", so sending an empty
     // one would be asking for an application with no name at all.
@@ -180,6 +254,7 @@ BOOST_AUTO_TEST_SUITE(EapDeploymentTest)
         BOOST_TEST(body.at("maxInstances").as_int64() == 2);
     }
 
+    // The server distinguishes a field being sent from one that is not, rather than one value from
     // another - so an update says only what it means to change.
     BOOST_AUTO_TEST_CASE(SendsOnlyWhatAnUpdateNames) {
         const EapClient client(Test::Answering(boost::json::serialize(application())));
@@ -210,17 +285,37 @@ BOOST_AUTO_TEST_SUITE(EapDeploymentTest)
         BOOST_TEST(body.at("namespace").as_string() == "");
     }
 
-    // Both or neither: they are re-resolved together, so naming one revokes what the other granted.
+    // Unlike a create, where an empty schedule is left out: here the field being present *is* the
+    // request, and an empty one is how a job goes back to being started by hand without being
+    // deleted and made again.
+    BOOST_AUTO_TEST_CASE(AnEmptyScheduleOnAnUpdateUnschedulesTheJob) {
+        const EapClient client(Test::Answering(boost::json::serialize(application())));
+
+        std::ignore = client.eap.UpdateApplication("order-service", {.schedule = ""});
+
+        const auto body = lastBody(client.gateway).as_object();
+        BOOST_REQUIRE(body.contains("schedule"));
+        BOOST_TEST(body.at("schedule").as_string() == "");
+        BOOST_TEST(!body.contains("type"));
+    }
+
+    // All four or none: they are re-resolved together, so naming one revokes what the others
+    // granted. An empty list therefore has to travel - it is "grant nothing of this kind", not
+    // "leave this kind alone".
     BOOST_AUTO_TEST_CASE(GrantsAreNamedTogether) {
         const EapClient client(Test::Answering(boost::json::serialize(application())));
 
         std::ignore = client.eap.UpdateApplication("order-service", {.buckets = std::vector<std::string>{"invoices"},
-                                                                     .queues = std::vector<std::string>{}});
+                                                                     .queues = std::vector<std::string>{},
+                                                                     .topics = std::vector<std::string>{"audit"},
+                                                                     .secrets = std::vector<std::string>{"db-password"}});
 
         const auto body = lastBody(client.gateway).as_object();
         BOOST_TEST(body.at("buckets").as_array().size() == 1U);
         BOOST_TEST(body.contains("queues"));
         BOOST_TEST(body.at("queues").as_array().empty());
+        BOOST_TEST(body.at("topics").as_array()[0].as_string() == "audit");
+        BOOST_TEST(body.at("secrets").as_array()[0].as_string() == "db-password");
     }
 
     // Absent asks for the artifact already deployed, which is what a rebuild under the same key
@@ -286,6 +381,10 @@ BOOST_AUTO_TEST_SUITE(EapRunningTest)
         BOOST_TEST(running.instances == 2L);
         BOOST_REQUIRE(running.endpoints.size() == 2U);
         BOOST_TEST(running.endpoints[0].instanceId == "i-1");
+        // Not redundant beside the port: an application may be spread over several nodes, so two
+        // instances can hold the same port and the port alone reaches neither.
+        BOOST_TEST(running.endpoints[0].host == "node-a");
+        BOOST_TEST(running.endpoints[1].host == "node-b");
         BOOST_TEST(running.endpoints[0].pid == 4711L);
         BOOST_TEST(running.endpoints[1].httpPort == 34002L);
     }
@@ -377,7 +476,9 @@ BOOST_AUTO_TEST_SUITE(EapNodeTest)
                                   boost::json::object{{"name", "worker-1"}, {"address", "10.0.0.11"},
                                                       {"principal", "node-worker-1"},
                                                       {"labels", boost::json::object{{"zone", "a"}}},
-                                                      {"cpuCount", 8}, {"loadAverage", 1.75},
+                                                      {"cpuCount", 8}, {"memoryMb", 57344},
+                                                      {"memoryTotalMb", 65536}, {"memoryUsedMb", 24576},
+                                                      {"loadAverage", 1.75},
                                                       {"version", "1.4.0"}, {"os", "linux"}, {"arch", "x86_64"},
                                                       {"drained", false}, {"live", true},
                                                       {"lastSeen", "2026-10-15T08:00:00Z"}},
@@ -390,6 +491,11 @@ BOOST_AUTO_TEST_SUITE(EapNodeTest)
         BOOST_REQUIRE(nodes.size() == 2U);
         BOOST_TEST(nodes[0].name == "worker-1");
         BOOST_TEST(nodes[0].cpuCount == 8L);
+        // What applications are offered, and what the machine actually has - the node keeps the
+        // difference for itself, so these are two different numbers rather than one reported twice.
+        BOOST_TEST(nodes[0].memoryMb == 57344L);
+        BOOST_TEST(nodes[0].memoryTotalMb == 65536L);
+        BOOST_TEST(nodes[0].memoryUsedMb == 24576L);
         BOOST_TEST(nodes[0].labels.at("zone") == "a");
         BOOST_TEST(nodes[0].live);
         BOOST_TEST(!nodes[0].drained);
@@ -643,6 +749,31 @@ BOOST_AUTO_TEST_SUITE(EapEgressTest)
         BOOST_REQUIRE(sites.sites.size() == 2U);
         BOOST_TEST(!sites.sites[0].limitsSet);
         BOOST_TEST(sites.sites[1].limitsSet);
+    }
+
+    // A site's bucket is reported as of now rather than as of the last write, so one nobody has
+    // called for an hour reads full. The "*" entry is the application's default and nobody acquires
+    // a permit against it, so it carries none of this - which has to read as zero rather than throw.
+    BOOST_AUTO_TEST_CASE(ReadsHowFullEachSitesBucketIsNow) {
+        const EapClient client(Test::Answering(R"({"defaultLimits": {"requestsPerSecond": 1.0},
+                                                   "sites": [{"site": "*", "limitsSet": true,
+                                                              "limits": {"requestsPerSecond": 1.0}},
+                                                             {"site": "b.example.com", "limitsSet": true,
+                                                              "limits": {"requestsPerSecond": 20.0},
+                                                              "tokens": 2.5, "inFlight": 3,
+                                                              "blockedUntil": "2026-11-22T10:00:00Z",
+                                                              "lastUsed": "2026-11-22T09:58:00Z"}]})"));
+
+        const auto sites = client.eap.ListEgressSites();
+
+        BOOST_REQUIRE(sites.sites.size() == 2U);
+        BOOST_TEST(sites.sites[0].tokens == 0.0);
+        BOOST_TEST(sites.sites[0].inFlight == 0L);
+        BOOST_TEST(sites.sites[0].blockedUntil == "");
+        // Fractional because the bucket fills continuously: two whole calls and half of a third.
+        BOOST_TEST(sites.sites[1].tokens == 2.5, boost::test_tools::tolerance(0.001));
+        BOOST_TEST(sites.sites[1].inFlight == 3L);
+        BOOST_TEST(sites.sites[1].blockedUntil == "2026-11-22T10:00:00Z");
     }
 
 BOOST_AUTO_TEST_SUITE_END()

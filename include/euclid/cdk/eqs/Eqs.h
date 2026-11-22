@@ -418,8 +418,20 @@ namespace Euclid::CDK::EQS {
 
         /**
          * @brief Deletes every message on a queue, leaving the queue itself in place.
+         *
+         * @par
+         * Inline by default, and that is the wrong default on a large queue: emptying one takes
+         * longer than the gateway will wait, so the caller gets a timeout while the purge runs on
+         * regardless. Ask for the background on anything big - the server then answers 202 with what
+         * was on the queue when it accepted the request, and PurgeQueueResult::background says which
+         * of the two happened.
+         *
+         * @param ern        the queue.
+         * @param background answer as soon as the request is accepted rather than when the queue is
+         *                   empty.
          */
-        void PurgeQueue(const std::string &ern) const;
+        [[nodiscard]]
+        PurgeQueueResult PurgeQueue(const std::string &ern, bool background = false) const;
 
         /**
          * @brief Deletes every message on every queue of an account, which defaults to this

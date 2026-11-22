@@ -374,13 +374,13 @@ namespace Euclid::CDK::ESM {
                         "count");
     }
 
-    void Esm::DeleteObject(const std::string &ern, const std::string &versionId) const {
+    DeleteVersionResult Esm::DeleteObject(const std::string &ern, const std::string &versionId) const {
         boost::json::object payload{{"ern", ern}};
         // Sent only when named, and the difference is the whole call: with a version it removes
         // that one, without it the key and every version under it.
         if (!versionId.empty()) payload["versionId"] = versionId;
 
-        std::ignore = Call("delete-object", payload);
+        return ToDeleteVersionResult(Call("delete-object", payload));
     }
 
     DeleteObjectsResult Esm::DeleteObjects(const std::string &bucketErn, const std::vector<std::string> &keys, const bool background) const {

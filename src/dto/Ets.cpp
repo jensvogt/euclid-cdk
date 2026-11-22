@@ -25,6 +25,7 @@ namespace Euclid::CDK::ETS {
                 .homeDirectory = Json::Text(value, "homeDirectory"),
                 .userIds = Json::Strings(value, "userIds"),
                 .userGroups = Json::Strings(value, "userGroups"),
+                .userCount = Json::Number(value, "userCount"),
                 .directories = Json::Strings(value, "directories"),
                 .desiredState = Json::Text(value, "desiredState"),
                 .state = Json::Text(value, "state"),

@@ -88,8 +88,9 @@ namespace Euclid::CDK::EQS {
         return ToQueueMetadata(Call("get-queue-metadata", {{"ern", ern}}));
     }
 
-    void Eqs::PurgeQueue(const std::string &ern) const {
-        std::ignore = Call("purge-queue", {{"ern", ern}});
+    PurgeQueueResult Eqs::PurgeQueue(const std::string &ern, const bool background) const {
+        // "async" on the wire, as in ESM.
+        return ToPurgeQueueResult(Call("purge-queue", {{"ern", ern}, {"async", background}}));
     }
 
     void Eqs::PurgeAllQueues(const PurgeAllQueuesOptions &options) const {

@@ -69,6 +69,7 @@ namespace {
                 {"homeDirectory", "incoming/"},
                 {"userIds", boost::json::array{"jens"}},
                 {"userGroups", boost::json::array{"partners"}},
+                {"userCount", 7},
                 {"directories", boost::json::array{"incoming/", "archive/"}},
                 {"desiredState", desiredState},
                 {"state", state},
@@ -102,6 +103,9 @@ BOOST_AUTO_TEST_SUITE(EtsDefinitionTest)
         // Nothing listens yet: a new server's desired state is stopped.
         BOOST_TEST(defined.desiredState == std::string(ETS::StateStopped));
         BOOST_TEST(!defined.IsRunning());
+        // Not derivable from the two lists: a group expands to users on the server, and somebody
+        // named directly as well as through a group is one person.
+        BOOST_TEST(defined.userCount == 7L);
 
         // The defaults travel rather than being left to the server to guess at.
         const auto body = lastBody(client.gateway);

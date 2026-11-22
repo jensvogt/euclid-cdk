@@ -382,6 +382,29 @@ namespace Euclid::CDK::ESM {
     };
 
     /**
+     * @brief What deleting one version of an object came to.
+     *
+     * @par
+     * "currentVersionId" is why this is answered rather than merely succeeding: deleting the
+     * *current* version promotes the one behind it, so the object goes on existing with different
+     * content. Which version that is cannot be worked out from the request, and a caller holding the
+     * old id would otherwise read the promotion as the object having vanished.
+     *
+     * @par
+     * Empty when nothing is left - the version deleted was the last one - and on a bucket without
+     * versioning, where a delete removes the object outright.
+     */
+    struct EUCLID_CDK_API DeleteVersionResult {
+        std::string ern;
+
+        /**
+         * @brief The version that was removed, echoed back.
+         */
+        std::string versionId;
+        std::string currentVersionId;
+    };
+
+    /**
      * @brief An object as it was stored, which is what both ways of writing one answer with.
      *
      * @par
@@ -396,6 +419,16 @@ namespace Euclid::CDK::ESM {
         std::string status;
         std::string contentType;
         std::string md5Sum;
+
+        /**
+         * @brief The version this write became, or empty on a bucket without versioning.
+         *
+         * @par
+         * The one thing a caller cannot work out for itself afterwards: by the time it asks, another
+         * write may have made its version current, and the id this write produced is the only handle
+         * on the bytes it actually stored.
+         */
+        std::string versionId;
 
         /**
          * @brief Whether the upload stored nothing because the key already held these bytes.
@@ -618,6 +651,12 @@ namespace Euclid::CDK::ESM {
         long expectedFileSize{};
         std::string internalName;
         std::string internalDir;
+
+        /**
+         * @brief What the check found beyond the kind of problem, where there is more to say - a
+         * file's header that does not decrypt, for instance. Empty when the kind says it all.
+         */
+        std::string detail;
         std::string created;
     };
 
@@ -823,6 +862,12 @@ namespace Euclid::CDK::ESM {
      */
     [[nodiscard]]
     EUCLID_CDK_API StoredObject ToStoredObject(const boost::json::value &value);
+
+    /**
+     * @brief Reads a delete-object response for a call that named a version.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API DeleteVersionResult ToDeleteVersionResult(const boost::json::value &value);
 
     /**
      * @brief Reads a create-upload response.

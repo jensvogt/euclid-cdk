@@ -12,6 +12,7 @@ namespace Euclid::CDK::EAP {
         return {
                 .instanceId = Json::Text(value, "instanceId"),
                 .pid = Json::Number(value, "pid"),
+                .host = Json::Text(value, "host"),
                 .httpPort = Json::Number(value, "httpPort"),
         };
     }
@@ -31,15 +32,25 @@ namespace Euclid::CDK::EAP {
                 .artifactKey = Json::Text(value, "artifactKey"),
                 .version = Json::Text(value, "version"),
                 .md5Sum = Json::Text(value, "md5Sum"),
+                .artifactSize = Json::Number(value, "artifactSize"),
                 .command = Json::Text(value, "command"),
                 .arguments = Json::Strings(value, "arguments"),
                 .environment = Json::StringMap(value, "environment"),
                 .resources = Json::Strings(value, "resources"),
+                .nodeLabels = Json::StringMap(value, "nodeLabels"),
                 .userId = Json::Text(value, "userId"),
+                .userExists = Json::Flag(value, "userExists"),
                 .logLevel = Json::Text(value, "logLevel"),
                 .minInstances = Json::Number(value, "minInstances"),
                 .maxInstances = Json::Number(value, "maxInstances"),
                 .readyTimeoutMs = Json::Number(value, "readyTimeoutMs"),
+                .memoryLimitMb = Json::Number(value, "memoryLimitMb"),
+                .cpuLimit = Json::Real(value, "cpuLimit"),
+                .type = Json::Text(value, "type"),
+                .schedule = Json::Text(value, "schedule"),
+                // Empty rather than 1970 when there is no schedule - the server leaves it out
+                // instead of formatting the epoch.
+                .nextRunAt = Json::Text(value, "nextRunAt"),
                 .desiredState = Json::Text(value, "desiredState"),
                 .state = Json::Text(value, "state"),
                 .instances = Json::Number(value, "instances"),
@@ -129,6 +140,11 @@ namespace Euclid::CDK::EAP {
                 .site = Json::Text(value, "site"),
                 .limits = ToEgressLimits(Json::Child(value, "limits")),
                 .limitsSet = Json::Flag(value, "limitsSet"),
+                // The "*" entry carries none of these: it is an application's default, and nobody
+                // acquires a permit against it, so it has no bucket to be partly full.
+                .tokens = Json::Real(value, "tokens"),
+                .inFlight = Json::Number(value, "inFlight"),
+                .blockedUntil = Json::Text(value, "blockedUntil"),
                 .lastUsed = Json::Text(value, "lastUsed"),
         };
     }
@@ -257,6 +273,11 @@ namespace Euclid::CDK::EAP {
                 .principal = Json::Text(value, "principal"),
                 .labels = Json::StringMap(value, "labels"),
                 .cpuCount = Json::Number(value, "cpuCount"),
+                // What applications are offered, which is less than the machine's installed
+                // memoryTotalMb - the machine keeps what it needs for itself.
+                .memoryMb = Json::Number(value, "memoryMb"),
+                .memoryTotalMb = Json::Number(value, "memoryTotalMb"),
+                .memoryUsedMb = Json::Number(value, "memoryUsedMb"),
                 // Real rather than Number: a load average of 0.5 is a real reading, and reading it
                 // as a long would report it as nothing at all.
                 .loadAverage = Json::Real(value, "loadAverage"),

@@ -40,6 +40,7 @@ namespace Euclid::CDK::EAG {
                 .moduleAction = Json::Text(value, "moduleAction"),
                 .methods = Json::Strings(value, "methods"),
                 .authentication = Json::Text(value, "authentication"),
+                .timeout = Json::Number(value, "timeout"),
                 // A route the server describes is one it stores, and a stored route that says
                 // nothing about being active was written before the field existed - which is a
                 // route that serves. Defaulting it to false would take every one of them offline in
