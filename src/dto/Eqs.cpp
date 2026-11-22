@@ -150,4 +150,15 @@ namespace Euclid::CDK::EQS {
         return result;
     }
 
+    PurgeQueueResult ToPurgeQueueResult(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                // "async" on the wire; "background" here, as in ESM's DeleteObjects() and
+                // PurgeBucket(), which make the same trade for the same reason.
+                .background = Json::Flag(value, "async"),
+                // Only sent on a background purge - an inline one does not count first.
+                .messages = Json::Number(value, "messages"),
+        };
+    }
+
 }// namespace Euclid::CDK::EQS

@@ -10,7 +10,8 @@ session a login answers with: **ESM** (storage), **EQS** (queues), **ENS** (noti
 endpoints onto a bucket), **EMO** (monitoring, including a metrics registry an application records
 into), **EAP** (the applications euclid runs), **EAG** (the API gateway that publishes them),
 **EES** (the event service — how something outside euclid watches what happens inside it), **EAD**
-(the audit trail) and **EMM** (the module manager, which is every module's live process pool).
+(the audit trail), **EDS** (the domain name service) and **EMM** (the module manager, which is every
+module's live process pool).
 
 That is all of euclid. For an action this SDK does not name — one newer than the release you have —
 `CDK::ModuleClient` is what a module client is built out of, and `EAM::Session::NewRequest()` and
@@ -241,6 +242,13 @@ exists. Turning it *off* leaves what was already kept, so `ListObjectVersions()`
 and a key whose current object was deleted still lists its versions, which is what makes a deletion
 recoverable.
 
+Two answers are worth reading on a versioned bucket. A write — `PutObject()` or `UploadFile()` —
+comes back with the `versionId` it became, which is the one thing a caller cannot work out
+afterwards: by the time it asks, another write may have made its version current. And
+`DeleteObject()` with a version named answers with `currentVersionId`, because deleting the
+*current* version promotes the one behind it — the object goes on existing with different content,
+and a caller holding the old id would otherwise read the promotion as the object having vanished.
+
 Lifecycle rules say what to archive and when. They are **replaced** rather than merged, and the whole
 set is validated before any of it is stored, so a bucket never ends up with half a set. Rules decide
 what to archive, never what to bring back: `RestoreObject()` is the only way back, and it is
@@ -279,6 +287,12 @@ Receiving is a lease rather than a read: a message a consumer takes is invisible
 consumer until its visibility timeout expires, and deleting it with the receipt handle is what says
 the work was done. A consumer that dies instead simply stops holding the lease, and the message
 comes back.
+
+`PurgeQueue()` is inline by default, and that is the wrong default on a large queue: emptying one
+takes longer than the gateway will wait, so the caller gets a timeout while the purge runs on
+regardless. Ask for the background on anything big — `PurgeQueueResult::background` says which of
+the two happened, and the count beside it is what was on the queue when the request was accepted,
+which is the only count anybody can be given.
 
 `waitTime` is a long poll the **server** holds open, so an idle queue costs one request for the
 whole window rather than one per tick, and a message arrives the instant it is sent. With no wait
@@ -407,9 +421,35 @@ eap.StartApplication("order-service");
 ```
 
 An application is deployed from an artifact already in a bucket — ESM puts it there, EAP names it.
-The deployment says which buckets and queues it may reach, and euclid grants those to the identity
-it runs as: a technical principal it creates for the application unless one is named, with no
-password, no login and one access key. Nothing an application leaks is then a person's credential.
+The deployment says which **buckets, queues, topics and secrets** it may reach, and euclid grants
+those to the identity it runs as: a technical principal it creates for the application unless one is
+named, with no password, no login and one access key. Nothing an application leaks is then a person's
+credential.
+
+An application is a `TypeProcess` or a `TypeJob`, and the difference is what an exit means: a process
+is kept up and an exit is a fault, while a job is started to do one thing and finish, where exit 0 is
+success and nothing restarts it. Only a job may carry a `schedule`, and the server refuses one
+without rather than storing a cron expression nothing will read:
+
+```cpp
+eap.CreateApplication("nightly-roll", std::string(EAP::RuntimeBinary), "artifacts", "nightly-roll-1.0.0",
+                      {.nodeLabels = {{"zone", "dmz"}},
+                       .memoryLimitMb = 512,
+                       .cpuLimit = 0.5,
+                       .type = std::string(EAP::TypeJob),
+                       .schedule = "0 2 * * *"});
+```
+
+`nodeLabels` is placement: the labels a node has to carry for this application to be put on it, and
+empty — the ordinary case — means the manager runs it itself. `memoryLimitMb` and `cpuLimit` are per
+instance, with 0 meaning no limit; `cpuLimit` is fractional, so 0.5 is half a core. `type` and
+`schedule` are the two fields a create leaves out when they say nothing, because the server refuses
+an unrecognised type rather than reading it as a process.
+
+`Application::userExists` is worth reading when something is being refused everything: the principal
+is checked when the application is created and never again, so one deleted underneath a definition
+that goes on naming it turns "euclid refused my secret" into "this application's user does not
+exist", in the listing an operator already has open.
 
 Starting is a desired state rather than a wait, as in ETS, so the application in the answer is
 usually still `STOPPED`. `RestartApplication()` exists instead of a stop followed by a start because
@@ -417,10 +457,12 @@ between those two the desired state is stopped, and a caller that fails in betwe
 application down.
 
 `UpdateApplication()` takes `std::optional` fields — an unset command leaves the stored one alone,
-an empty one hands the artifact back to the runtime's own interpreter. Two things there are worth
-knowing: `buckets` and `queues` are re-resolved together, so naming one and not the other revokes
-what the other granted (name both, or neither); and `nameSpace` is a *move* rather than a field
-change, which is why unset and empty differ — empty moves the application back to the account root.
+an empty one hands the artifact back to the runtime's own interpreter. Three things there are worth
+knowing: the four resource lists are re-resolved *together*, so naming one and not the others revokes
+what they granted (name all of them, or none); `nameSpace` is a *move* rather than a field change,
+which is why unset and empty differ — empty moves the application back to the account root; and an
+empty `schedule` **does** travel here, where a create leaves it out, because that is how a job goes
+back to being started by hand without being deleted and made again.
 
 **`ReportLoad()` is the one call here an application makes about itself** rather than an
 administrator making it about the application:
@@ -524,7 +566,13 @@ region or authentication is **absent** from the request, because the server fall
 only for a field that is not there at all — an empty namespace would publish the route at the account
 root instead of in the session's. And an upload route defaults to `AuthEuclid` where a proxy route
 defaults to none, because an unauthenticated upload route is a public write endpoint into somebody's
-bucket. Every action here is administrator-only.
+bucket.
+
+A route may set its own `timeout`, in seconds, with 0 taking the gateway's default and
+`EAG::MaxRouteTimeout` — an hour — the ceiling. The server **refuses** anything beyond it rather than
+clamping it, because a route cut off sooner than its author was told is worse than a rejected
+configuration. An hour is already a job rather than a request anyway: the gateway holds a connection
+to the caller and one to the instance for the whole of it. Every action here is administrator-only.
 
 ### Transfer servers
 
@@ -546,12 +594,21 @@ writes the desired state, so the server in the answer is usually still `STOPPED`
 
 `UpdateServer()` takes `std::optional` fields because the server distinguishes a field being *sent*
 from one that is not, rather than one value from another — an unset field leaves the stored one
-alone, and an empty string replaces it. Every action here is administrator-only.
+alone, and an empty string replaces it.
+
+`TransferServer::userCount` is how many people the server actually lets in, which is not derivable
+from `userIds` and `userGroups`: a group is a name that expands to users on the server, and somebody
+named directly as well as through a group is one person. Both lists are still reported as they are
+stored, because a page that edits them has to show what is there. Every action here is
+administrator-only.
 
 ### Application monitoring
 
 `EMO::Emo` is the monitoring module's client — `PushMetrics()`, and the administrator-only `List()`
-and `Average()` for reading rows back. But an application does not want to push final numbers; it
+and `Average()` for reading rows back. `MetricQuery::labels` narrows by exact pairs; `labelName` and
+`labelValue` narrow by one half of a pair each, which the map cannot say — a name alone asks for every
+row broken down by that dimension whatever its value, and a value alone for whichever dimension
+happens to hold it. But an application does not want to push final numbers; it
 wants to count things and time them and have something else do the arithmetic. euclid-jdk gets that
 from Micrometer, and C++ has no Micrometer.
 
@@ -680,6 +737,42 @@ which is all a pager needs to know there is another page. An exact count on a tr
 millions is seconds of database time beside a page of fifty, paid again on every page somebody turns
 — `CountEvents()` is there when the number itself is the answer. `PurgeEvents()` requires a positive
 window, and is itself recorded.
+
+### Domain names
+
+`EDS::Eds` holds the zones this installation answers for. The module runs two servers: the API these
+calls reach, with credentials and grants, and a name server answering DNS queries on its own ports to
+anybody who asks.
+
+```cpp
+eds.CreateZone("example.com", 300, "the example zone");
+std::ignore = eds.PutRecord("example.com", "www", EDS::TypeA, 60, {"10.0.0.1", "10.0.0.2"});
+
+const auto answer = eds.GetAnswer("www.example.com", EDS::TypeA);
+```
+
+A record is a **set**, which is what DNS actually stores: three addresses for one name are one `A`
+set with three values, not three records. `PutRecord()` replaces the whole set and `DeleteRecord()`
+removes all of it, so adding one value means reading the set, appending to `Record::values` and
+putting it back. An empty `values` is refused before it travels, rather than read as a deletion.
+
+Names may be relative to the zone (`"www"`), absolute (`"www.example.com."`), or `"@"` for the apex;
+a name outside the zone is refused rather than quietly moved into it. Values are in presentation
+form, the way a zone file writes them — `"10 mail.example.com."` for an `MX`, `"0 5 443 host."` for
+an `SRV` — and one the server could not serve is refused on the way in rather than failing later when
+the zone is loaded. `CNAME` is checked harder than the rest, because the type carries its own rule:
+exactly one value, nothing of another type beside it, and never at the apex, where the zone's SOA and
+NS already live.
+
+`GetAnswer()` is the seam between the two servers — it runs the name server's resolution through the
+API, wildcards and CNAME chasing and all, so a test can read what a resolver would get without
+pointing one at the right port. It does not go upstream: a name no zone of ours covers comes back
+`RcodeRefused` with `authoritative` false, which is a different statement from `RcodeNxDomain` — that
+one is a zone of ours saying the name does not exist.
+
+Every call that names a zone answers `404` when it belongs to another account, exactly as it does
+when there is no such zone. That is deliberate: telling the two apart would say who else uses this
+installation, and a zone name is often a company's name.
 
 ### Module processes
 

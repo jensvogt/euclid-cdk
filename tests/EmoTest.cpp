@@ -171,6 +171,26 @@ BOOST_AUTO_TEST_SUITE(EmoClientTest)
         BOOST_TEST(!body.contains("limit"));
     }
 
+    // Not the same as a pair in "labels", and not expressible as one: a name on its own asks for
+    // every row that is broken down by that dimension, whatever its value, and a value on its own
+    // asks for whichever dimension happens to hold it. Both survive beside the map, which asks for
+    // exact pairs.
+    BOOST_AUTO_TEST_CASE(NarrowsByOneDimensionWithoutNamingItsValue) {
+        const EmoClient client(Test::Answering(R"({"items": []})"));
+
+        std::ignore = client.emo.List({.labels = {{"outcome", "ok"}}, .labelName = "host"});
+
+        auto body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("labelName").as_string() == "host");
+        BOOST_TEST(body.at("labels").at("outcome").as_string() == "ok");
+        BOOST_TEST(!body.contains("labelValue"));
+
+        std::ignore = client.emo.List({.labelValue = "node-a"});
+        body = lastBody(client.gateway).as_object();
+        BOOST_TEST(body.at("labelValue").as_string() == "node-a");
+        BOOST_TEST(!body.contains("labelName"));
+    }
+
     BOOST_AUTO_TEST_CASE(ReadsAnAverageAsOneNumber) {
         const EmoClient client(Test::Answering(R"({"average": 12.75})"));
 

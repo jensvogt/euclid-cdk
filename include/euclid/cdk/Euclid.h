@@ -71,6 +71,7 @@
 #include <euclid/cdk/dto/Eag.h>
 #include <euclid/cdk/dto/Eam.h>
 #include <euclid/cdk/dto/Eap.h>
+#include <euclid/cdk/dto/Eds.h>
 #include <euclid/cdk/dto/Ees.h>
 #include <euclid/cdk/dto/Ekm.h>
 #include <euclid/cdk/dto/Ekv.h>
@@ -87,6 +88,7 @@
 #include <euclid/cdk/eam/Eam.h>
 #include <euclid/cdk/eam/Session.h>
 #include <euclid/cdk/eap/Eap.h>
+#include <euclid/cdk/eds/Eds.h>
 #include <euclid/cdk/ees/Ees.h>
 #include <euclid/cdk/ekm/Ekm.h>
 #include <euclid/cdk/ekv/Ekv.h>

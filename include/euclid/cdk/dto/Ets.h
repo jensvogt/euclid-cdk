@@ -88,6 +88,17 @@ namespace Euclid::CDK::ETS {
         std::vector<std::string> userGroups;
 
         /**
+         * @brief How many people this server lets in, counted once each.
+         *
+         * @par
+         * Not derivable from the two lists above: a group is a name that expands to users on the
+         * server, and somebody named directly as well as through a group is one person. Both lists
+         * are still reported as they are stored, because a page that edits them has to show what is
+         * actually there - this is what they come to.
+         */
+        long userCount{};
+
+        /**
          * @brief Key prefixes presented as directories, for the clients that will not show what they
          * cannot list.
          */

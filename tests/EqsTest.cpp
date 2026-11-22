@@ -257,6 +257,33 @@ BOOST_AUTO_TEST_SUITE(EqsQueueTest)
         BOOST_TEST(lastBody(client.gateway).at("visibility").as_int64() == 60);
     }
 
+    // Inline by default, and the wrong default on a large queue: emptying one takes longer than
+    // the gateway will wait, so the caller gets a timeout while the purge runs on regardless.
+    // "background" is how the answer says which of the two happened, and the count that comes with
+    // it is what was on the queue when the request was accepted - the only count anybody can be
+    // given, since by the time the purge finishes the number is zero.
+    BOOST_AUTO_TEST_CASE(PurgesInlineOrInTheBackgroundAndSaysWhich) {
+        const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders", "async": false})"));
+
+        const auto inline_ = client.eqs.PurgeQueue(kQueue);
+
+        BOOST_TEST(!inline_.background);
+        BOOST_TEST(inline_.messages == 0L);
+        // "async" on the wire; "background" in this SDK, as in ESM's DeleteObjects().
+        BOOST_TEST(lastBody(client.gateway).at("async").as_bool() == false);
+        BOOST_TEST(std::string(client.gateway.LastRequest()["x-euclid-action"]) == "purge-queue");
+    }
+
+    BOOST_AUTO_TEST_CASE(ABackgroundPurgeAnswersWithWhatWasThereWhenItStarted) {
+        const EqsClient client(Test::Answering(R"({"ern": "ern:queue/orders", "async": true, "messages": 184203})"));
+
+        const auto accepted = client.eqs.PurgeQueue(kQueue, true);
+
+        BOOST_TEST(accepted.background);
+        BOOST_TEST(accepted.messages == 184203L);
+        BOOST_TEST(lastBody(client.gateway).at("async").as_bool());
+    }
+
     // Every namespace of the session's account, which is what this call has always done.
     BOOST_AUTO_TEST_CASE(PurgesEveryNamespaceOfTheAccountUnlessToldOtherwise) {
         const EqsClient client(Test::Answering());

@@ -151,6 +151,12 @@ namespace Euclid::CDK::EAG {
         std::string authentication;
 
         /**
+         * @brief How long the gateway waits for the thing behind this route, in seconds; 0 is the
+         * gateway's own default.
+         */
+        long timeout{};
+
+        /**
          * @brief Whether the gateway serves this route at all.
          *
          * @par

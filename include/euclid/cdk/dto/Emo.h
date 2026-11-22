@@ -386,9 +386,29 @@ namespace Euclid::CDK::EMO {
         std::string name;
 
         /**
-         * @brief The dimensions a row has to carry. A row may carry more.
+         * @brief The dimensions a row has to carry, as pairs. A row may carry more.
          */
         Labels labels;
+
+        /**
+         * @brief One dimension a row has to carry, by name, whatever its value.
+         *
+         * @par
+         * Not the same as a pair in "labels", and not expressible as one: this asks "every row that
+         * is broken down by host", where a pair asks "every row for host X". With labelValue set as
+         * well the two together are exactly one pair, and naming it that way is the same query.
+         */
+        std::string labelName;
+
+        /**
+         * @brief One value a row has to carry under *some* dimension.
+         *
+         * @par
+         * The mirror of labelName and the stranger of the two - "whichever label holds this value".
+         * Kept because it was always possible, and useful on the one-dimensional metrics euclid
+         * records about itself, where there is only one label for it to have been.
+         */
+        std::string labelValue;
 
         /**
          * @brief The most rows to answer with; the server's own default is 100.

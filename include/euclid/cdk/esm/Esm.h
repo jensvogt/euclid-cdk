@@ -753,9 +753,22 @@ namespace Euclid::CDK::ESM {
                           bool includeDirectories = false) const;
 
         /**
-         * @brief Deletes one object, by its own ERN.
+         * @brief Deletes one object, by its own ERN - or one version of it.
+         *
+         * @par
+         * With a version named it removes that one; without, the key and every version under it.
+         *
+         * @par
+         * The result matters on a versioned bucket: deleting the *current* version promotes the one
+         * behind it, so the object goes on existing with different content, and
+         * DeleteVersionResult::currentVersionId is what it is now. Empty on a bucket without
+         * versioning, where there is nothing left to be current.
+         *
+         * @param ern       the object.
+         * @param versionId one version of it, or empty for the key and all of them.
          */
-        void DeleteObject(const std::string &ern, const std::string &versionId = {}) const;
+        [[nodiscard]]
+        DeleteVersionResult DeleteObject(const std::string &ern, const std::string &versionId = {}) const;
 
         /**
          * @brief Deletes several named objects from a bucket in one call.

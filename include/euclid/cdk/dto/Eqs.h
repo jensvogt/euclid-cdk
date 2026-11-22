@@ -241,6 +241,27 @@ namespace Euclid::CDK::EQS {
     };
 
     /**
+     * @brief What a purge came to, and whether it is finished.
+     *
+     * @par
+     * "background" is the whole point of reading this: false means the queue is empty now, true
+     * means the server took the request and is still working. A purge of a large backlog takes
+     * longer than the gateway will wait, so doing it inline hands the caller a timeout while the
+     * purge runs on regardless - which is why asking for the background is the right call on
+     * anything big.
+     *
+     * @par
+     * "messages" is what was on the queue when the request was accepted, which is the only count
+     * anybody can be given: by the time the purge finishes the number is zero, and by the time it is
+     * read something may have sent more. 0 for an inline purge, which does not count first.
+     */
+    struct EUCLID_CDK_API PurgeQueueResult {
+        std::string ern;
+        bool background{};
+        long messages{};
+    };
+
+    /**
      * @brief Reads a queue.
      */
     [[nodiscard]]
@@ -317,5 +338,11 @@ namespace Euclid::CDK::EQS {
      */
     [[nodiscard]]
     EUCLID_CDK_API RedriveDlqResult ToRedriveDlqResult(const boost::json::value &value);
+
+    /**
+     * @brief Reads a purge-queue response.
+     */
+    [[nodiscard]]
+    EUCLID_CDK_API PurgeQueueResult ToPurgeQueueResult(const boost::json::value &value);
 
 }// namespace Euclid::CDK::EQS

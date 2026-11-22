@@ -145,6 +145,15 @@ namespace Euclid::CDK::ENS {
         long retentionPeriod{};
 
         /**
+         * @brief Whether a message is dropped once every subscription has had it.
+         *
+         * @par
+         * Reported here as well as on Topic, because this is the call a publisher makes before
+         * deciding whether the message it is about to send will still be readable afterwards.
+         */
+        bool deleteAfterDelivery{};
+
+        /**
          * @brief How many messages are waiting for this topic to be started again. Nothing but a
          * stopped topic has any, and the server only counts them for a topic that is stopped.
          */

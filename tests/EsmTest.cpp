@@ -1025,6 +1025,22 @@ BOOST_AUTO_TEST_SUITE(EsmListingDetailTest)
         BOOST_TEST(!client.esm.PutObject(kBucket, "q3.pdf", "new bytes").unchanged);
     }
 
+    // The one thing a caller cannot work out afterwards: by the time it asks, another write may
+    // have made its version current, and the id this write produced is the only handle on the bytes
+    // it actually stored. Empty on a bucket without versioning.
+    BOOST_AUTO_TEST_CASE(AWriteSaysWhichVersionItBecame) {
+        const EsmClient client(Test::Answering(
+                R"({"ern": "ern:object/reports/q3.pdf", "size": 2048, "versionId": "v4"})"));
+
+        BOOST_TEST(client.esm.PutObject(kBucket, "q3.pdf", "new bytes").versionId == "v4");
+    }
+
+    BOOST_AUTO_TEST_CASE(AWriteToAnUnversionedBucketNamesNoVersion) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:object/reports/q3.pdf", "size": 2048})"));
+
+        BOOST_TEST(client.esm.PutObject(kBucket, "q3.pdf", "new bytes").versionId == "");
+    }
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(EsmVersionTest)
@@ -1087,14 +1103,35 @@ BOOST_AUTO_TEST_SUITE(EsmVersionTest)
     BOOST_AUTO_TEST_CASE(DeletingOneVersionNamesItAndDeletingTheKeyDoesNot) {
         const EsmClient client(Test::Answering("{}"));
 
-        client.esm.DeleteObject("ern:object/reports/q3.pdf", "v1");
+        std::ignore = client.esm.DeleteObject("ern:object/reports/q3.pdf", "v1");
         auto body = lastBody(client.gateway);
         BOOST_TEST(body.at("ern").as_string() == "ern:object/reports/q3.pdf");
         BOOST_TEST(body.at("versionId").as_string() == "v1");
 
-        client.esm.DeleteObject("ern:object/reports/q3.pdf");
+        std::ignore = client.esm.DeleteObject("ern:object/reports/q3.pdf");
         body = lastBody(client.gateway);
         BOOST_TEST(!body.as_object().contains("versionId"));
+    }
+
+    // Deleting the current version promotes the one behind it, so the object goes on existing with
+    // different content. Which version that is cannot be worked out from the request, and a caller
+    // holding the old id would otherwise read the promotion as the object having vanished.
+    BOOST_AUTO_TEST_CASE(DeletingTheCurrentVersionSaysWhichOneIsCurrentNow) {
+        const EsmClient client(Test::Answering(
+                R"({"ern": "ern:object/reports/q3.pdf", "versionId": "v3", "currentVersionId": "v2"})"));
+
+        const auto result = client.esm.DeleteObject("ern:object/reports/q3.pdf", "v3");
+
+        BOOST_TEST(result.versionId == "v3");
+        BOOST_TEST(result.currentVersionId == "v2");
+    }
+
+    // Empty rather than absent: there was no version behind the one that went, or the bucket keeps
+    // none at all. Both mean the key holds nothing now.
+    BOOST_AUTO_TEST_CASE(NothingLeftCurrentReadsAsEmptyRatherThanThrowing) {
+        const EsmClient client(Test::Answering(R"({"ern": "ern:object/reports/q3.pdf", "versionId": "v1"})"));
+
+        BOOST_TEST(client.esm.DeleteObject("ern:object/reports/q3.pdf", "v1").currentVersionId == "");
     }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -1216,16 +1253,22 @@ BOOST_AUTO_TEST_SUITE(EsmLifecycleTest)
                                                    "scanned": 500, "checked": 480, "skipped": 20,
                                                    "problems": [{"key": "q3.pdf", "problem": "size-mismatch",
                                                                  "recordedSize": 2048, "fileSize": 1024,
-                                                                 "expectedFileSize": 2048}],
+                                                                 "expectedFileSize": 2048},
+                                                                {"key": "q4.pdf", "problem": "unreadable-header",
+                                                                 "detail": "the encryption header does not decrypt"}],
                                                    "nextKey": "q4.pdf"})"));
 
         const auto result = client.esm.VerifyObjects(kBucket, {.limit = 500});
 
         BOOST_TEST(result.scanned == 500L);
         BOOST_TEST(result.skipped == 20L);
-        BOOST_REQUIRE(result.problems.size() == 1U);
+        BOOST_REQUIRE(result.problems.size() == 2U);
         BOOST_TEST(result.problems[0].problem == "size-mismatch");
         BOOST_TEST(result.problems[0].fileSize == 1024L);
+        // Sent only where the kind of problem does not say it all, so empty is the ordinary case
+        // rather than a server that forgot to explain itself.
+        BOOST_TEST(result.problems[0].detail == "");
+        BOOST_TEST(result.problems[1].detail == "the encryption header does not decrypt");
         // Where the next pass starts; empty would be the end of the bucket.
         BOOST_TEST(result.nextKey == "q4.pdf");
         BOOST_TEST(lastBody(client.gateway).at("limit").as_int64() == 500);

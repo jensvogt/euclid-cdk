@@ -126,6 +126,9 @@ namespace Euclid::CDK::ESM {
                 .expectedFileSize = Json::Number(value, "expectedFileSize"),
                 .internalName = Json::Text(value, "internalName"),
                 .internalDir = Json::Text(value, "internalDir"),
+                // Sent only when the kind of problem does not say it all, so empty is the ordinary
+                // case rather than a server that forgot.
+                .detail = Json::Text(value, "detail"),
                 .created = Json::Text(value, "created"),
         };
     }
@@ -314,7 +317,16 @@ namespace Euclid::CDK::ESM {
                 .status = Json::Text(value, "status"),
                 .contentType = Json::Text(value, "contentType"),
                 .md5Sum = Json::Text(value, "md5Sum"),
+                .versionId = Json::Text(value, "versionId"),
                 .unchanged = Json::Flag(value, "unchanged"),
+        };
+    }
+
+    DeleteVersionResult ToDeleteVersionResult(const boost::json::value &value) {
+        return {
+                .ern = Json::Text(value, "ern"),
+                .versionId = Json::Text(value, "versionId"),
+                .currentVersionId = Json::Text(value, "currentVersionId"),
         };
     }
 

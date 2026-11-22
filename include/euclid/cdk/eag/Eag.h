@@ -90,6 +90,17 @@ namespace Euclid::CDK::EAG {
     inline constexpr long DefaultPartSize = 5L * 1024 * 1024;
 
     /**
+     * @brief The longest a route may wait for what is behind it, in seconds.
+     *
+     * @par
+     * An hour is already a job rather than a request: it ties up a connection to the caller and one
+     * to the instance for all of it, and is better started asynchronously and polled for. The server
+     * refuses anything beyond this rather than clamping it, because a route cut off sooner than its
+     * author was told is worse than a rejected configuration.
+     */
+    inline constexpr long MaxRouteTimeout = 3600;
+
+    /**
      * @brief What a route says beyond its path and what answers it.
      *
      * @par
@@ -135,6 +146,12 @@ namespace Euclid::CDK::EAG {
          * @brief The region requests carried by this route act in; empty is the caller's own.
          */
         std::string region;
+
+        /**
+         * @brief How long the gateway waits for what is behind this route, in seconds; 0 takes the
+         * gateway's own default, and MaxRouteTimeout is the ceiling.
+         */
+        long timeout{};
 
         /**
          * @brief Whether the gateway serves this route from the moment it is created.
@@ -239,6 +256,7 @@ namespace Euclid::CDK::EAG {
         std::optional<long> maxBytes;
         std::optional<long> partSize;
         std::optional<std::vector<std::string>> contentTypes;
+        std::optional<long> timeout;
         std::optional<std::string> region;
 
         /**

@@ -58,6 +58,16 @@ namespace Euclid::CDK::EAP {
     struct EUCLID_CDK_API Endpoint {
         std::string instanceId;
         long pid{};
+
+        /**
+         * @brief The host this instance runs on.
+         *
+         * @par
+         * Not redundant beside the port, because an application may be spread over several nodes:
+         * two instances can hold the same port on different machines, so the port alone does not
+         * reach one.
+         */
+        std::string host;
         long httpPort{};
     };
 
@@ -121,16 +131,48 @@ namespace Euclid::CDK::EAP {
          * host against, and the one a redeploy has to differ from.
          */
         std::string md5Sum;
+
+        /**
+         * @brief The artifact's size in bytes, as deployed, from the same ESM row as md5Sum - so the
+         * two always describe the same build. 0 for an application deployed before this was
+         * recorded.
+         */
+        long artifactSize{};
         std::string command;
         std::vector<std::string> arguments;
         std::map<std::string, std::string> environment;
 
         /**
-         * @brief The ERNs of the buckets and queues this application was granted, resolved from the
-         * names it was deployed with.
+         * @brief The ERNs of the buckets, queues, topics and secrets this application was granted,
+         * resolved from the names it was deployed with.
          */
         std::vector<std::string> resources;
+
+        /**
+         * @brief The labels a node has to carry for this application to be placed on it.
+         *
+         * @par
+         * Empty is the ordinary case and means the manager runs it itself rather than handing it to
+         * a node.
+         */
+        std::map<std::string, std::string> nodeLabels;
         std::string userId;
+
+        /**
+         * @brief Whether the identity in userId still exists.
+         *
+         * @par
+         * Checked when the application is created and never again, so a principal can be deleted or
+         * renamed underneath a definition that goes on naming it - after which the application runs,
+         * authenticates as nobody and is refused everything, reporting whatever call it happened to
+         * make first.
+         *
+         * @par
+         * False is the interesting answer and is why the server reports this: it turns a failure that
+         * reads as "euclid refused my secret" into one that reads as "this application's user does
+         * not exist".
+         */
+        bool userExists{};
 
         /**
          * @brief The level this application logs at, or empty when it is under the configured
@@ -140,6 +182,41 @@ namespace Euclid::CDK::EAP {
         long minInstances{};
         long maxInstances{};
         long readyTimeoutMs{};
+
+        /**
+         * @brief Per instance, in MiB; 0 is no limit.
+         *
+         * @par
+         * What a node actually enforces is its own business - one whose unit does not delegate its
+         * cgroup cannot - and is in that node's application-memory-limit-mb series rather than here.
+         */
+        long memoryLimitMb{};
+
+        /**
+         * @brief Per instance, in cores; 0 is no limit. Fractional, so 0.5 is half a core.
+         */
+        double cpuLimit{};
+
+        /**
+         * @brief TypeProcess or TypeJob.
+         */
+        std::string type;
+
+        /**
+         * @brief When a job runs, as a cron expression, or empty for one that is started by hand.
+         * Only a job can carry one.
+         */
+        std::string schedule;
+
+        /**
+         * @brief When the schedule next fires, or empty when there is no schedule.
+         *
+         * @par
+         * Empty rather than a timestamp, deliberately: "no schedule" is stored as the epoch, and
+         * formatting that would read as a job overdue by half a century instead of one that is not
+         * scheduled at all.
+         */
+        std::string nextRunAt;
 
         /**
          * @brief "RUNNING" or "STOPPED", as asked for.
@@ -303,6 +380,22 @@ namespace Euclid::CDK::EAP {
         long cpuCount{};
 
         /**
+         * @brief How much memory this node offers applications, in MiB.
+         *
+         * @par
+         * Less than memoryTotalMb: the machine keeps what it needs for itself. This is the figure
+         * placement weighs an application's memoryLimitMb against.
+         */
+        long memoryMb{};
+
+        /**
+         * @brief The machine's installed memory and how much of it was in use at the node's last
+         * renewal, both in MiB - "64 GB / 128 GB". 0 for a node that has not said.
+         */
+        long memoryTotalMb{};
+        long memoryUsedMb{};
+
+        /**
          * @brief The one-minute load average from the node's last heartbeat, as current as lastSeen
          * says it is.
          *
@@ -417,6 +510,27 @@ namespace Euclid::CDK::EAP {
          * and DeleteEgressLimit() on it would answer 404.
          */
         bool limitsSet{};
+
+        /**
+         * @brief How much of the bucket is left, as of now rather than as of the last write - a site
+         * nobody has called for an hour reads full.
+         *
+         * @par
+         * Fractional, because the bucket fills continuously: 2.5 is two whole calls and half of a
+         * third. Only reported for a real site; the "*" entry is an application's default and
+         * nobody acquires a permit against it, so it has no state at all and this reads 0.
+         */
+        double tokens{};
+
+        /**
+         * @brief How many permits are held right now, leases that have run out already excluded.
+         */
+        long inFlight{};
+
+        /**
+         * @brief When this site stops being throttled, or empty when it is not.
+         */
+        std::string blockedUntil;
         std::string lastUsed;
     };
 
